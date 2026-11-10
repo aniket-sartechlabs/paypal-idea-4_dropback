@@ -2,8 +2,8 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type
 import type { ColDef } from 'ag-grid-community'
 import { Link, NavLink, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import {
-  Activity, ArrowDownRight, ArrowRight, Check, CheckCircle2,
-  CircleHelp, ExternalLink, Eye, LayoutDashboard, LoaderCircle, LockKeyhole,
+  Activity, ArrowDownRight, ArrowRight, Brain, Check, CheckCircle2,
+  CircleHelp, ExternalLink, Eye, FileText, LayoutDashboard, LoaderCircle, LockKeyhole,
   LogOut, Package, Plus, RefreshCw, RotateCcw, Search, Settings2, ShieldCheck, ShoppingBag, Sparkles,
   Store, TrendingDown, WalletCards, X,
 } from 'lucide-react'
@@ -288,14 +288,14 @@ function ProductsPage({ toast }: { toast: (value: Toast) => void }) {
   }
 
   return <>
-    <PageHeading eyebrow="CATALOG & PRICE MONITORING" title="Products" description="Connect each product to Channel3 and keep prices current across the market." right={<button className="button button-dark" onClick={() => setAdding(true)}><Plus size={16} /> Add product</button>} />
-    <div className="product-info"><div className="product-info-icon"><Activity size={18} /></div><div><b>Channel3 is your live price signal</b><span>Channel3 price monitoring is required. Use the exact product title or matching SKU to avoid linking a different model.</span></div><span className="source-chip"><span /> CHANNEL3 API</span></div>
+    <PageHeading eyebrow="CATALOG & PRICE MONITORING" title="Products" description="Connect each product to Channel3 and monitor competitor market prices across retailers." right={<button className="button button-dark" onClick={() => setAdding(true)}><Plus size={16} /> Add product</button>} />
+    <div className="product-info"><div className="product-info-icon"><Activity size={18} /></div><div><b>Channel3 monitors competitor market prices</b><span>Channel3 tracks real-time competitor prices and in-stock offers across online retailers to catch price drops early.</span></div><span className="source-chip"><span /> CHANNEL3 API</span></div>
     {adding && <form className="add-product-form" onSubmit={addProduct}><div className="form-heading"><div><b>Add a product</b><span>Use the exact Channel3 product title or matching SKU so price alerts stay on the right item.</span></div><button type="button" className="icon-button" onClick={() => setAdding(false)} aria-label="Close"><X size={18} /></button></div><div className="form-grid"><label>Product name<input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label><label>SKU<input required value={form.sku} onChange={e => setForm({ ...form, sku: e.target.value })} /></label><label>Category<input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} /></label><label>Current price<input required type="number" min="0.01" step="0.01" value={form.current_price} onChange={e => setForm({ ...form, current_price: e.target.value })} /></label></div><label className="full-field">Short description<input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></label><button className="button button-dark" type="submit">Add to catalog <ArrowRight size={16} /></button></form>}
     <div className="product-list">{products.map((product, i) => <article className="product-row" key={product.id}>
       <div className={`product-art art-${i % 3}`}><span>{product.category === 'Appliances' ? '☕' : product.category === 'Electronics' ? '◉' : '▱'}</span></div>
       <div className="product-copy"><div className="product-name-line"><h3>{product.name}</h3><span className={`connection-status ${product.channel3_connected ? 'connected' : ''}`}><i />{product.channel3_connected ? 'Channel3 linked' : 'Not checked yet'}</span></div><div className="product-meta"><span>SKU <b>{product.sku}</b></span><span>{product.category}</span><span>{product.protection_days}-day protection</span></div></div>
       <div className="product-price-box"><span>MERCHANT PRICE</span><b>{money(product.current_price, product.currency)}</b></div>
-      <div className="product-controls"><button className="button button-light small-button" onClick={() => liveCheck(product)} disabled={checkingId === product.id}>{checkingId === product.id ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />} Check live price</button><form className="price-edit" onSubmit={event => changeMerchantPrice(event, product)}><input aria-label={`New merchant price for ${product.name}`} type="number" min="0.01" step="0.01" placeholder="New price" value={newPrice[product.id] || ''} onChange={e => setNewPrice({ ...newPrice, [product.id]: e.target.value })} /><button disabled={!newPrice[product.id]} className="icon-button" title="Record merchant price update"><ArrowDownRight size={17} /></button></form></div>
+      <div className="product-controls"><button className="button button-light small-button" onClick={() => liveCheck(product)} disabled={checkingId === product.id} title="Search competitor prices and live offers across retailers">{checkingId === product.id ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />} Check competitor prices</button><form className="price-edit" onSubmit={event => changeMerchantPrice(event, product)}><input aria-label={`New merchant price for ${product.name}`} type="number" min="0.01" step="0.01" placeholder="New price" value={newPrice[product.id] || ''} onChange={e => setNewPrice({ ...newPrice, [product.id]: e.target.value })} /><button disabled={!newPrice[product.id]} className="icon-button" title="Record merchant price update"><ArrowDownRight size={17} /></button></form></div>
     </article>)}</div>
   </>
 }
@@ -324,6 +324,7 @@ function DecisionsPage({ toast }: { toast: (value: Toast) => void }) {
   const { decisions, refresh } = useWorkspaceData()
   const [working, setWorking] = useState('')
   const [quick, setQuick] = useState('')
+  const [inspecting, setInspecting] = useState<Decision | null>(null)
   async function action(row: Decision, kind: 'approve' | 'reject') {
     setWorking(row.id)
     try {
@@ -339,24 +340,212 @@ function DecisionsPage({ toast }: { toast: (value: Toast) => void }) {
     finally { setWorking('') }
   }
   const columns = useMemo<ColDef<Decision>[]>(() => [
-    { field: 'paypal_order_id', headerName: 'ORDER / BUYER', flex: 1.2, minWidth: 160, cellRenderer: (p: { data: Decision }) => <div className="grid-buyer"><b>{p.data.buyer_name || 'Sample buyer'}</b><span>{p.data.paypal_order_id ? `#${p.data.paypal_order_id.slice(-8)}` : `#${p.data.order_id.slice(0, 8)}`}</span></div> },
-    { field: 'product_name', headerName: 'PRODUCT', flex: 1.3, minWidth: 160 },
-    { field: 'refund_amount', headerName: 'REFUND', flex: 0.8, minWidth: 100, valueFormatter: p => money(p.value, p.data?.currency) },
-    { field: 'return_probability', headerName: 'RETURN RISK', flex: 1.2, minWidth: 150, cellRenderer: (p: { value: number }) => <RiskBar probability={p.value || 0} /> },
-    { field: 'estimated_savings', headerName: 'NET SAVINGS', flex: 0.8, minWidth: 110, valueFormatter: p => money(p.value, p.data?.currency), cellClass: 'savings-cell' },
-    { field: 'status', headerName: 'STATUS', flex: 0.9, minWidth: 125, cellRenderer: (p: { value: string }) => <span className={`decision-status ${p.value.toLowerCase().replace('_', '-')}`}>{p.value.replace('_', ' ')}</span> },
+    { field: 'paypal_order_id', headerName: 'ORDER / BUYER', flex: 1.1, minWidth: 155, cellRenderer: (p: { data: Decision }) => <div className="grid-buyer"><b>{p.data.buyer_name || 'Sample buyer'}</b><span>{p.data.paypal_order_id ? `#${p.data.paypal_order_id.slice(-8)}` : `#${p.data.order_id.slice(0, 8)}`}</span></div> },
+    { field: 'product_name', headerName: 'PRODUCT', flex: 1.2, minWidth: 155 },
+    { field: 'refund_amount', headerName: 'REFUND', flex: 0.8, minWidth: 95, valueFormatter: p => money(p.value, p.data?.currency) },
+    { field: 'return_probability', headerName: 'RETURN RISK', flex: 1.1, minWidth: 135, cellRenderer: (p: { value: number }) => <RiskBar probability={p.value || 0} /> },
+    { field: 'estimated_savings', headerName: 'NET SAVINGS', flex: 0.8, minWidth: 105, valueFormatter: p => money(p.value, p.data?.currency), cellClass: 'savings-cell' },
+    {
+      field: 'reasoning',
+      headerName: 'AI REASONING & ANALYSIS',
+      flex: 2.1,
+      minWidth: 260,
+      cellRenderer: (p: { data: Decision }) => {
+        const isAi = p.data?.analysis_report?.provider === 'openai' || p.data?.analysis_report?.provider === 'gemini'
+        return (
+          <div className="grid-reasoning-cell">
+            <div className="grid-reasoning-top">
+              <span className={`ai-badge-sm ${isAi ? 'ai-live' : 'ai-rules'}`}>
+                <Brain size={11} /> {isAi ? 'OpenAI gpt-4.1-mini' : 'Actuarial Engine'}
+              </span>
+              <button type="button" className="inspect-link" onClick={() => setInspecting(p.data)} title="View complete AI return risk report">
+                <FileText size={11} /> Inspect Report
+              </button>
+            </div>
+            <p className="grid-reasoning-text" title={p.data?.reasoning}>{p.data?.reasoning}</p>
+          </div>
+        )
+      },
+    },
+    { field: 'status', headerName: 'STATUS', flex: 0.9, minWidth: 120, cellRenderer: (p: { value: string }) => <span className={`decision-status ${p.value.toLowerCase().replace('_', '-')}`}>{p.value.replace('_', ' ')}</span> },
     { headerName: 'ACTION', flex: 1.2, minWidth: 185, sortable: false, cellRenderer: (p: { data: Decision }) => p.data.status === 'PENDING_REVIEW' ? <div className="grid-actions"><button className="approve-button" disabled={working === p.data.id} onClick={() => action(p.data, 'approve')}><Check size={14} /> Approve</button><button className="reject-button" disabled={working === p.data.id} onClick={() => action(p.data, 'reject')}>Reject</button></div> : p.data.status === 'APPROVED' && p.data.can_execute ? <span className="decision-status approved">APPROVED · SENT</span> : <span className="grid-muted">{p.data.status === 'SKIPPED' ? 'Policy skip' : p.data.status}</span> },
   ], [working])
   const awaiting = decisions.filter(row => row.status === 'PENDING_REVIEW')
   const finished = decisions.filter(row => row.status !== 'PENDING_REVIEW')
   return <>
-    <PageHeading eyebrow="HUMAN-IN-THE-LOOP" title="Agent review" description="Review the reasoning and projected savings before deciding what to send back." right={<button className="button button-light" onClick={() => void refresh()}><RefreshCw size={15} /> Refresh decisions</button>} />
+    <PageHeading eyebrow="HUMAN-IN-THE-LOOP" title="Agent review" description="Inspect AI reasoning, return likelihood drivers, and projected net savings before approving refunds." right={<button className="button button-light" onClick={() => void refresh()}><RefreshCw size={15} /> Refresh decisions</button>} />
     <div className="review-banner"><div className="review-banner-icon"><LockKeyhole size={18} /></div><div><b>You’re in control of every refund.</b><span>Recommendations can be approved or rejected here. Only captured PayPal sandbox orders can produce a payment action.</span></div><div className="review-banner-count"><b>{awaiting.length}</b><span>awaiting you</span></div></div>
-    <section className="section-block grid-section"><div className="section-head"><div><div className="section-title">Awaiting review <span className="count-bubble">{awaiting.length}</span></div><p>Deterministic policy checks plus return-likelihood scoring.</p></div><div className="grid-tools"><div className="search-field"><Search size={15} /><input value={quick} placeholder="Search recommendations" onChange={event => setQuick(event.target.value)} /></div></div></div>
+    <section className="section-block grid-section"><div className="section-head"><div><div className="section-title">Awaiting review <span className="count-bubble">{awaiting.length}</span></div><p>Deterministic policy checks combined with OpenAI return-likelihood scoring.</p></div><div className="grid-tools"><div className="search-field"><Search size={15} /><input value={quick} placeholder="Search recommendations" onChange={event => setQuick(event.target.value)} /></div></div></div>
       {awaiting.length ? <div className="table-frame"><div className="ag-theme-quartz grid-wrap decision-grid"><Suspense fallback={<div className="grid-loading">Preparing review table…</div>}><GridTable rowData={awaiting} columnDefs={columns} quickFilterText={quick} pagination paginationPageSize={10} /></Suspense></div></div> : <EmptyState compact icon={<Sparkles size={18} />} title="Nothing to review right now" copy="Process a Channel3 price drop to find eligible orders and create agent recommendations." action={<Link className="button button-light small-button" to="/price-drops">Open price drops <ArrowRight size={14} /></Link>} />}
     </section>
     {finished.length > 0 && <section className="section-block grid-section"><div className="section-head"><div><div className="section-title">Decision history</div><p>Approved, rejected, and policy-skipped recommendations.</p></div></div><div className="table-frame"><div className="ag-theme-quartz grid-wrap"><Suspense fallback={<div className="grid-loading">Preparing history table…</div>}><GridTable rowData={finished} columnDefs={columns} pagination paginationPageSize={10} /></Suspense></div></div></section>}
+    {inspecting && <DecisionAnalysisModal decision={inspecting} onClose={() => setInspecting(null)} onAction={action} working={working} />}
   </>
+}
+
+function DecisionAnalysisModal({
+  decision,
+  onClose,
+  onAction,
+  working,
+}: {
+  decision: Decision | null
+  onClose: () => void
+  onAction: (row: Decision, kind: 'approve' | 'reject') => Promise<void>
+  working: string
+}) {
+  if (!decision) return null
+  const report = decision.analysis_report
+  const probPercent = Math.round((decision.return_probability || 0) * 100)
+  const isAi = report?.provider === 'openai' || report?.provider === 'gemini'
+  const providerLabel = report?.provider === 'openai'
+    ? 'OpenAI (gpt-4.1-mini)'
+    : report?.provider === 'gemini'
+    ? 'Google Gemini 2.0'
+    : 'Actuarial Deterministic Engine'
+
+  const fin = report?.financial_breakdown
+  const returnCost = fin?.estimated_return_cost ?? decision.estimated_return_cost
+  const refundAmt = fin?.proposed_refund ?? decision.refund_amount
+  const netSavings = fin?.net_savings ?? decision.estimated_savings
+
+  return (
+    <div className="analysis-modal-overlay" onClick={onClose}>
+      <div className="analysis-modal" onClick={e => e.stopPropagation()}>
+        <div className="analysis-modal-header">
+          <div>
+            <div className="modal-eyebrow">
+              <span className={`ai-badge ${isAi ? 'ai-live' : 'ai-rules'}`}>
+                <Brain size={13} /> {providerLabel}
+              </span>
+              <span className={`decision-status ${decision.status.toLowerCase().replace('_', '-')}`}>
+                {decision.status.replace('_', ' ')}
+              </span>
+            </div>
+            <h2>AI Return-Risk & Price Protection Report</h2>
+            <p className="modal-sub">
+              Product: <b>{decision.product_name}</b> (SKU: {decision.sku}) · Buyer: <b>{decision.buyer_name || 'Buyer'}</b>
+            </p>
+          </div>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="Close modal">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="analysis-modal-body">
+          <div className="modal-metrics-grid">
+            <div className="modal-metric-card">
+              <span className="card-label">RETURN PROBABILITY</span>
+              <div className="metric-score">
+                <span className="score-num">{probPercent}%</span>
+                <span className={`risk-pill risk-${(report?.risk_level || 'HIGH').toLowerCase()}`}>
+                  {report?.risk_level || 'HIGH'} RISK
+                </span>
+              </div>
+              <div className="modal-risk-bar"><i style={{ width: `${probPercent}%` }} /></div>
+              <span className="card-hint">Confidence: <b>{report?.confidence || 'HIGH'}</b></span>
+            </div>
+
+            <div className="modal-metric-card">
+              <span className="card-label">PROPOSED PARTIAL REFUND</span>
+              <div className="metric-score">
+                <span className="score-num refund-num">{money(refundAmt, decision.currency)}</span>
+              </div>
+              <span className="card-hint">Credited via PayPal Orders v2 capture refund</span>
+            </div>
+
+            <div className="modal-metric-card highlight-card">
+              <span className="card-label">MERCHANT MARGIN PROTECTED</span>
+              <div className="metric-score">
+                <span className="score-num savings-num">+{money(netSavings, decision.currency)}</span>
+              </div>
+              <span className="card-hint">Net saved compared to physical return logistics</span>
+            </div>
+          </div>
+
+          <div className="modal-section">
+            <h3><WalletCards size={16} /> Cost of Return vs Proactive Refund Analysis</h3>
+            <div className="financial-comparison-grid">
+              <div className="fin-col return-col">
+                <div className="fin-col-title">COST OF FULL PHYSICAL RETURN</div>
+                <div className="fin-row"><span>Estimated Roundtrip Shipping</span><b>$24.00</b></div>
+                <div className="fin-row"><span>Restocking & Inspection Fee (15%)</span><b>${((decision.purchase_price || 0) * 0.15).toFixed(2)}</b></div>
+                <div className="fin-row"><span>Open-Box Resale Loss (25%)</span><b>${((decision.purchase_price || 0) * 0.25).toFixed(2)}</b></div>
+                <div className="fin-total-row"><span>Total Cost of Physical Return</span><b>{money(returnCost, decision.currency)}</b></div>
+              </div>
+
+              <div className="fin-col refund-col">
+                <div className="fin-col-title">PROACTIVE PARTIAL PRICE PROTECTION</div>
+                <div className="fin-row"><span>Direct Price Delta Refund</span><b>{money(refundAmt, decision.currency)}</b></div>
+                <div className="fin-row"><span>Customer Keeps Item (No Freight)</span><b>$0.00 Freight</b></div>
+                <div className="fin-row"><span>No Warehouse Restocking</span><b>$0.00 Restock</b></div>
+                <div className="fin-total-row highlight-row"><span>Net Margin Protected</span><b>+{money(netSavings, decision.currency)}</b></div>
+              </div>
+            </div>
+          </div>
+
+          <div className="modal-section">
+            <h3><Activity size={16} /> Key Behavioral Drivers & Risk Indicators</h3>
+            <ul className="modal-driver-list">
+              {(report?.key_drivers && report.key_drivers.length > 0 ? report.key_drivers : [
+                'Order is within the active price-protection and return window.',
+                'Substantial competitor price drop creates strong incentive to return and re-buy.',
+                'Proactive refund avoids reverse shipping and open-box markdown losses.',
+              ]).map((driver, idx) => (
+                <li key={idx}><span className="driver-bullet" /><span>{driver}</span></li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="modal-section narrative-section">
+            <h3><Brain size={16} /> AI Executive Summary</h3>
+            <blockquote className="modal-quote">
+              <p>{decision.reasoning}</p>
+            </blockquote>
+            {report?.retention_impact && (
+              <div className="retention-callout">
+                <ShieldCheck size={16} />
+                <div>
+                  <b>Customer Retention Impact: </b>
+                  <span>{report.retention_impact}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="analysis-modal-footer">
+          <div className="footer-note">
+            <LockKeyhole size={14} />
+            <span>Human-in-the-loop: DropBack never auto-charges or auto-refunds. Merchant approval is mandatory.</span>
+          </div>
+          <div className="footer-actions">
+            <button type="button" className="button button-light" onClick={onClose}>Close</button>
+            {decision.status === 'PENDING_REVIEW' && (
+              <>
+                <button
+                  type="button"
+                  className="reject-button button"
+                  disabled={working === decision.id}
+                  onClick={async () => { await onAction(decision, 'reject'); onClose() }}
+                >
+                  Reject
+                </button>
+                <button
+                  type="button"
+                  className="approve-button button"
+                  disabled={working === decision.id}
+                  onClick={async () => { await onAction(decision, 'approve'); onClose() }}
+                >
+                  <Check size={15} /> Approve & Issue Refund
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function RiskBar({ probability }: { probability: number }) {

@@ -41,6 +41,26 @@ export type PriceDrop = {
   processed: boolean
 }
 
+export type AnalysisReport = {
+  return_probability?: number
+  confidence?: 'HIGH' | 'MEDIUM' | 'LOW' | string
+  risk_level?: 'HIGH' | 'MEDIUM' | 'LOW' | string
+  key_drivers?: string[]
+  reasoning?: string
+  retention_impact?: string
+  recommended_action?: string
+  provider?: string
+  model?: string
+  financial_breakdown?: {
+    purchase_price?: number
+    drop_percentage?: number
+    days_since_purchase?: number
+    proposed_refund?: number
+    estimated_return_cost?: number
+    net_savings?: number
+  }
+}
+
 export type Decision = {
   id: string
   price_drop_id: string
@@ -57,6 +77,7 @@ export type Decision = {
   estimated_return_cost: number
   estimated_savings: number
   reasoning: string
+  analysis_report?: AnalysisReport
   decision: 'REFUND' | 'SKIP'
   status: string
   within_window: boolean

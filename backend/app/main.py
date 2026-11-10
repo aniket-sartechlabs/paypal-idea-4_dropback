@@ -158,8 +158,43 @@ def order_dict(order: Order) -> dict:
     }
 
 
+def parse_decision_report(decision: Decision) -> tuple[str, dict]:
+    raw = decision.reasoning or ""
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            return data.get("reasoning", ""), data
+    except Exception:
+        pass
+    prob = float(decision.return_probability or 0)
+    risk_level = "HIGH" if prob >= 0.55 else "MEDIUM" if prob >= 0.3 else "LOW"
+    provider = "openai" if "[scoring: openai]" in raw else "gemini" if "[scoring: gemini]" in raw else "rules"
+    clean_text = raw.replace("[scoring: openai]", "").replace("[scoring: gemini]", "").replace("[scoring: rules]", "").strip()
+    return clean_text, {
+        "return_probability": prob,
+        "confidence": "HIGH" if provider in {"openai", "gemini"} else "MEDIUM",
+        "risk_level": risk_level,
+        "key_drivers": [
+            f"Evaluated return risk: {round(prob * 100)}% based on market price delta.",
+            f"Within merchant's protection window: {'Yes' if decision.within_window else 'No'}.",
+            f"Projected net merchant savings: ${money(decision.estimated_savings):.2f} if proactive refund preempts full return.",
+        ],
+        "reasoning": clean_text,
+        "retention_impact": "Proactive price protection converts buyer remorse into brand loyalty.",
+        "recommended_action": "APPROVE_PARTIAL_REFUND" if decision.decision == "REFUND" else "POLICY_SKIP",
+        "provider": provider,
+        "model": "gpt-4.1-mini" if provider == "openai" else "Actuarial Engine",
+        "financial_breakdown": {
+            "proposed_refund": money(decision.refund_amount),
+            "estimated_return_cost": money(decision.estimated_return_cost),
+            "net_savings": money(decision.estimated_savings),
+        },
+    }
+
+
 def decision_dict(decision: Decision) -> dict:
     refund = decision.order.capture.refunded_amount if decision.order.capture else 0
+    reason_text, report = parse_decision_report(decision)
     return {
         "id": decision.id, "price_drop_id": decision.price_drop_id, "order_id": decision.order_id,
         "paypal_order_id": decision.order.paypal_order_id, "buyer_name": decision.order.buyer_name,
@@ -167,7 +202,8 @@ def decision_dict(decision: Decision) -> dict:
         "sku": decision.price_drop.product.sku, "purchase_price": max((money(item.unit_price) for item in decision.order.items if item.sku == decision.price_drop.product.sku), default=0),
         "refund_amount": money(decision.refund_amount), "currency": decision.order.currency,
         "return_probability": float(decision.return_probability), "estimated_return_cost": money(decision.estimated_return_cost),
-        "estimated_savings": money(decision.estimated_savings), "reasoning": decision.reasoning,
+        "estimated_savings": money(decision.estimated_savings), "reasoning": reason_text,
+        "analysis_report": report,
         "decision": decision.decision, "status": decision.status, "within_window": decision.within_window,
         "budget_available": decision.budget_available, "source": decision.order.source,
         "can_execute": bool(decision.capture.paypal_capture_id and decision.order.source == "paypal" and decision.status == "APPROVED"),
@@ -579,7 +615,33 @@ async def process_price_drop(drop_id: str, db: Db, _: Merchant):
         return_cost = as_decimal(current_settings.return_shipping_cost) * 2 + purchase_value * as_decimal(current_settings.restocking_fee_percentage) / 100 + purchase_value * as_decimal(current_settings.open_box_discount_percentage) / 100
         gross_savings_if_returned = return_cost - refund_amount
         prior_probability, _ = deterministic_score(product.category, float(drop.drop_percentage), days_since)
-        probability, model_reason, provider = await explain_decision(product.category, float(drop.drop_percentage), days_since, prior_probability, float(gross_savings_if_returned))
+        try:
+            exp_res = await explain_decision(
+                product.category,
+                float(drop.drop_percentage),
+                days_since,
+                prior_probability,
+                float(gross_savings_if_returned),
+                product_name=product.name,
+                purchase_price=float(purchase_value),
+                refund_amount=float(refund_amount),
+                return_cost=float(return_cost),
+            )
+        except TypeError:
+            exp_res = await explain_decision(
+                product.category,
+                float(drop.drop_percentage),
+                days_since,
+                prior_probability,
+                float(gross_savings_if_returned),
+            )
+
+        if len(exp_res) == 4:
+            probability, model_reason, provider, report = exp_res
+        else:
+            probability, model_reason, provider = exp_res
+            report = None
+
         expected_savings = return_cost * as_decimal(probability) - refund_amount
         recommend = within_window and min_drop_ok and budget_available and refund_amount > 0 and expected_savings > 0 and probability >= 0.25
         if not within_window:
@@ -596,9 +658,17 @@ async def process_price_drop(drop_id: str, db: Db, _: Merchant):
             reason = "Return likelihood is below the merchant’s decision threshold."
         else:
             reason = model_reason
+
+        if report and isinstance(report, dict):
+            report["reasoning"] = reason
+            report["recommended_action"] = "APPROVE_PARTIAL_REFUND" if recommend else "POLICY_SKIP"
+            report_payload = json.dumps(report)
+        else:
+            report_payload = f"{reason} [scoring: {provider}]"
+
         decision = Decision(price_drop_id=drop.id, capture_id=order.capture.id, order_id=order.id,
                             decision="REFUND" if recommend else "SKIP", refund_amount=refund_amount if recommend else Decimal("0.00"),
-                            reasoning=f"{reason} [scoring: {provider}]", return_probability=probability,
+                            reasoning=report_payload, return_probability=probability,
                             estimated_return_cost=return_cost, estimated_savings=max(Decimal("0.00"), expected_savings) if recommend else Decimal("0.00"),
                             within_window=within_window, budget_available=budget_available, status="PENDING_REVIEW" if recommend else "SKIPPED")
         db.add(decision)
