@@ -2,13 +2,13 @@
 
 > **Deadline:** Nov 12, 2026 at 12:00pm PST (Thu 21:00 IST)
 > **Repository:** https://github.com/aniket-sartechlabs/paypal-idea-4.git
-> **Status:** Research complete. Ready to build.
+> **Status:** Core implementation is built. Sandbox buyer approval is currently blocked because the configured PayPal sandbox seller rejected USD. Production provider setup also remains outstanding; see Sections 8 and 16.
 
 ---
 
 ## 1. The Idea (Refined)
 
-**DropBack for Merchants** — an AI-powered autonomous price-protection agent that helps merchants proactively issue partial refunds to recent buyers when prices drop, eliminating costly full-item returns.
+**DropBack for Merchants** — an AI-assisted price-protection agent that helps merchants proactively offer partial refunds to recent buyers when prices drop, reducing costly full-item returns. Every refund remains under merchant approval.
 
 ### The Problem (Merchant-Side)
 When a merchant lowers a product price, recent buyers who paid more often:
@@ -19,23 +19,23 @@ When a merchant lowers a product price, recent buyers who paid more often:
 **A full return + repurchase costs the merchant $30–$50 per order.** A proactive $40 partial refund costs only $40 and retains the customer.
 
 ### How DropBack Works
-1. **Merchant installs DropBack** and connects their PayPal merchant account
+1. **A single merchant configures DropBack** with its PayPal account credentials. Multi-merchant installation and PayPal partner onboarding are future work.
 2. **Orders flow in** — captured via PayPal Orders v2 with full SKU/item data
 3. **Price drop detected** — via Channel3 API monitoring or merchant manually triggering a price change
-4. **AI Agent evaluates each eligible order:**
+4. **DropBack evaluates each eligible order:**
    - Is it within the price-protection window (default: 14 days)?
    - Does the SKU/product match?
-   - Is the refund amount ≤ the configurable budget cap?
-   - Is the projected return cost higher than the refund? (return probability scoring)
-5. **Agent issues partial refund** via `POST /v2/payments/captures/{id}/refund` with a customer-friendly `note_to_payer`
+   - Is the refund amount within the per-order and daily budget caps?
+   - Is the probability-weighted return cost higher than the proposed refund?
+5. **The merchant approves a recommendation**, then the backend issues the partial refund via `POST /v2/payments/captures/{id}/refund` with a customer-friendly `note_to_payer`. DropBack never issues a refund automatically.
 6. **Customer sees** "$40 back in your PayPal" with message: "We dropped the price — here's the difference back!"
 7. **Merchant dashboard** shows: orders exposed, refunds issued, estimated returns avoided, net savings
 
 ### Why This Wins
 - ✅ **Every PayPal API call is legitimate** — merchant's own credentials, own captures, own refunds
-- ✅ **AI makes a real financial decision** — not just automating a form
+- ✅ **AI supports a real merchant decision** — deterministic policy rules remain authoritative and a human approves each refund
 - ✅ **Directly targets multiple prize categories** — Best Agentic Commerce, Most Impactful, AG Grid, Channel3
-- ✅ **The "money moment" is real** — sandbox buyer actually receives the refund
+- ✅ **The sandbox money flow is real** — checkout, capture, and refunds use PayPal Sandbox; buyer approval is required to complete checkout
 - ✅ **Post-purchase is an underserved niche** — most teams will build checkout agents
 
 ---
@@ -315,6 +315,7 @@ CREATE TABLE merchant_settings (
 | Method | Route | Purpose |
 |---|---|---|
 | `POST` | `/api/v1/webhooks/paypal` | Receive PayPal webhook events |
+| `POST` | `/api/v1/webhooks/channel3` | Receive signed Channel3 price-change events |
 
 #### Settings
 | Method | Route | Purpose |
@@ -357,7 +358,7 @@ Price Drop Detected
 │                   │
 │  refund_amount = old_price - new_price
 │  return_cost = shipping_both_ways + restock_loss + open_box_loss
-│  net_savings = return_cost - refund_amount
+│  expected_net_savings = return_probability × return_cost - refund_amount
 └────────┬──────────┘
          │
          ▼
@@ -377,7 +378,7 @@ Price Drop Detected
 ┌───────────────────┐
 │ 5. Decision       │  DETERMINISTIC (final authority)
 │                   │
-│  IF net_savings > 0 AND return_prob > threshold:
+│  IF expected_net_savings > 0 AND return_prob > threshold:
 │    → RECOMMEND REFUND
 │  ELSE:
 │    → SKIP (explain why)
@@ -390,7 +391,7 @@ Price Drop Detected
 │                   │
 │  Show decision + reasoning in dashboard
 │  Merchant clicks APPROVE or REJECT
-│  (or auto-approve if enabled in settings)
+│  Automatic approval is disabled
 └────────┬──────────┘
          │ Approved
          ▼
@@ -428,37 +429,19 @@ IF net_savings > 0 → refund costs less than a return
 
 ## 8. Channel3 Integration
 
-### Purpose
-Monitor product prices across retailers to detect price drops automatically.
+### Purpose and current API flow
+Channel3 is required for live product matching and market-price signals. The current Channel3 API uses `POST https://api.trychannel3.com/v1/search` with an `x-api-key` header. The backend compares the matched product's in-stock new offers in the same currency, stores the stable Channel3 product ID, then creates a product subscription for `offer.price.changed` and `offer.availability.changed`.
 
-### Implementation
-```python
-# Price check flow
-async def check_prices(product: Product) -> Optional[PriceDrop]:
-    """Query Channel3 for current price of a product."""
-    response = await channel3_client.search(
-        query=product.name,
-        filters={"website_ids": [product.merchant_domain]}  # optional
-    )
+The old sketch above assumed a polled response shape and `result.sku`; those fields are not guaranteed by the current API. The matcher checks distinguishing model/size/color tokens and title coverage before using a candidate, with a strict 0.95 confidence threshold. Generic or ambiguous product names are not auto-linked; use the exact Channel3 title or a matching SKU. A rejected prior link is unsubscribed and cleared so later events cannot create a false recommendation. Returned affiliate offer links do not affect refund decisions.
 
-    for result in response.products:
-        if result.sku == product.sku or fuzzy_match(result.title, product.name):
-            current_price = min(offer.price for offer in result.offers)
-            if current_price < product.current_price:
-                drop = product.current_price - current_price
-                return PriceDrop(
-                    product_id=product.id,
-                    old_price=product.current_price,
-                    new_price=current_price,
-                    source="channel3"
-                )
-    return None
-```
+### Price event behavior
+- A merchant can run an immediate live check from Products. A lower matched offer creates a price-drop candidate; drop size and percent thresholds are evaluated against the buyer's purchase price when recommendations are calculated.
+- Channel3 product subscriptions refresh on their provider cadence and send signed Svix events to `/api/v1/webhooks/channel3`. The backend verifies timestamp and signature, deduplicates event IDs, and fetches the latest product before recording a lower price.
+- Channel3 price signals are market offers. They do not change the merchant's storefront price. A price signal only creates recommendations; a merchant still reviews every refund.
+- A direct merchant price edit is retained as a secondary event source when the merchant updates its own catalog.
+- `CHANNEL3_API_KEY` is required for live checks. Automated subscription delivery requires `CHANNEL3_WEBHOOK_SECRET` and a public HTTPS webhook registered in Channel3's dashboard.
 
-### Fallback
-If Channel3 API is unavailable:
-1. Manual price update via merchant dashboard (always available)
-2. Simulated price drops for demo purposes
+Channel3 documents product subscriptions as daily refresh based notifications, not instant continuous polling. Their exact event schema can evolve, so the webhook implementation refetches product data by the stable product ID instead of trusting a price embedded in the event. Expected net savings are calculated as `return_probability × estimated_return_cost − refund_amount`; this prevents low-probability returns from being presented as guaranteed savings.
 
 ---
 
@@ -531,46 +514,46 @@ Agent decisions awaiting merchant review.
 
 ## 11. Development Phases (72-Hour Plan)
 
-### Phase 1: Foundation (Hours 0–8) — CURRENT
+### Phase 1: Foundation (Hours 0–8) — COMPLETE
 - [x] Repository setup
 - [x] PayPal API research & verification
 - [x] Sandbox credential testing
 - [x] Documentation
-- [ ] Project scaffolding (FastAPI + Vite + React)
-- [ ] Database models & migrations
-- [ ] PayPal service layer (OAuth, Orders, Captures, Refunds)
-- [ ] Basic API routes
+- [x] Project scaffolding (FastAPI + Vite + React)
+- [x] Database models & migrations
+- [x] PayPal service layer (OAuth, Orders, Captures, Refunds)
+- [x] Basic API routes
 
 ### Phase 2: Core Engine (Hours 8–20)
-- [ ] Product catalog with seed data
-- [ ] Order creation → capture → store flow
-- [ ] PayPal JS SDK v6 checkout integration
-- [ ] Price drop detection (manual + Channel3)
-- [ ] Refund decision engine (deterministic rules)
-- [ ] Partial refund execution via PayPal API
-- [ ] End-to-end test: order → price drop → refund
+- [x] Product catalog with seed data
+- [x] Order creation → capture → store flow implemented; sandbox order creation verified through the browser
+- [x] PayPal JS SDK v6 checkout integration
+- [x] Price drop detection (merchant update + Channel3 live checks and subscriptions)
+- [x] Refund recommendation engine (deterministic eligibility and budget rules)
+- [x] Partial refund execution via PayPal API after merchant approval
+- [ ] End-to-end sandbox test: buyer approval → capture → Channel3 price drop → approved refund (blocked until the PayPal sandbox Business seller accepts USD)
 
 ### Phase 3: AI Agent (Hours 20–32)
-- [ ] LLM integration (Gemini/OpenAI) for return probability scoring
-- [ ] Agent reasoning generation (human-readable explanations)
-- [ ] Agent action logging & audit trail
-- [ ] Auto-process vs. manual review modes
-- [ ] Channel3 API integration for automated price monitoring
+- [x] Optional LLM integration (Gemini/OpenAI) for return probability scoring, with deterministic fallback
+- [x] Agent reasoning generation (human-readable explanations)
+- [x] Agent action logging & audit trail
+- [x] Human review and approval flow; automatic refunds are intentionally disabled
+- [x] Channel3 API integration for live price monitoring and subscriptions
 
 ### Phase 4: Dashboard & UX (Hours 32–48)
-- [ ] AG Grid dashboard (3 panels)
-- [ ] Price exposure visualization
-- [ ] Refund decision review UI with approve/reject
-- [ ] Analytics summary cards
-- [ ] Merchant settings page
-- [ ] Demo storefront with product cards + PayPal checkout
+- [x] AG Grid dashboard (orders, price drops, and refund decisions)
+- [ ] Dedicated price-exposure chart (current exposure and summary metrics are available)
+- [x] Refund decision review UI with approve/reject
+- [x] Analytics summary cards
+- [x] Merchant settings page
+- [x] Demo storefront with product cards + PayPal checkout
 
 ### Phase 5: Polish & Submit (Hours 48–72)
-- [ ] Webhook integration (PAYMENT.CAPTURE.COMPLETED, PAYMENT.CAPTURE.REFUNDED)
-- [ ] Error handling & edge cases
-- [ ] Seed data: 20 demo orders with various states
-- [ ] Full end-to-end demo flow scripting
-- [ ] README.md with setup instructions
+- [x] PayPal and Channel3 webhook handlers with signature verification; provider registration still requires production HTTPS setup
+- [x] Error handling & edge cases for core payment, price, and refund paths
+- [x] Development seed data with clearly non-refundable sample orders
+- [ ] Full end-to-end demo flow scripting (pending a successful sandbox buyer approval after seller currency setup)
+- [x] README.md with setup instructions
 - [ ] Record 3-minute demo video
 - [ ] Devpost submission
 
@@ -680,7 +663,7 @@ paypal-idea-4/
 | Prize | Amount | How DropBack Qualifies |
 |---|---|---|
 | **1st Place** | $12,000 | Strong across all criteria |
-| **Best Use of Agentic Commerce** | $5,000 | AI agent autonomously decides & executes partial refunds |
+| **Best Use of Agentic Commerce** | $5,000 | AI estimates return risk; merchant approves each partial refund |
 | **Most Impactful** | $5,000 | Saves merchants money, improves customer experience |
 | **AG Grid** (1st) | $5,000 | Dashboard built entirely with AG Grid |
 | **AG Grid** (2nd) | $2,000 | (backup) |
@@ -694,11 +677,11 @@ paypal-idea-4/
 ## 14. Demo Flow (3-Minute Video Script)
 
 1. **0:00–0:20** — "Every day, merchants lose money when customers return items just to rebuy at a lower price. DropBack fixes this."
-2. **0:20–0:50** — Show storefront. Buy espresso machine for $200 via PayPal checkout. Capture completes.
-3. **0:50–1:10** — Merchant lowers price to $160. DropBack detects the $40 drop.
-4. **1:10–1:40** — AI agent evaluates: "5 orders eligible. Return cost per order: $104. Refund cost: $40. Net savings: $64 per order."
-5. **1:40–2:10** — Merchant reviews decisions in AG Grid dashboard. Approves batch. Refunds execute via PayPal.
-6. **2:10–2:30** — Show sandbox buyer account: "$40 refund from DropBack Merchant Demo — We dropped the price!"
+2. **0:20–0:50** — Show storefront. Buy an espresso machine through PayPal Sandbox and complete buyer approval.
+3. **0:50–1:10** — Run the Channel3 live price check. If no lower market offer is available during the demo, use the merchant price-update control to exercise the fallback workflow.
+4. **1:10–1:40** — DropBack scores eligible orders and compares probability-weighted return costs with each proposed refund.
+5. **1:40–2:10** — Merchant reviews the reasoning in the dashboard and approves an individual recommendation. The backend executes the sandbox refund.
+6. **2:10–2:30** — Show the sandbox buyer account and the completed refund.
 7. **2:30–2:50** — Dashboard summary: "5 refunds issued ($200 total), ~5 returns avoided, $320 estimated savings."
 8. **2:50–3:00** — "DropBack: proactive refunds that save merchants money and delight customers."
 
@@ -732,4 +715,18 @@ OPENAI_API_KEY=<key>
 
 # Security
 SECRET_KEY=<random-string>
+MERCHANT_EMAIL=<merchant login>
+MERCHANT_PASSWORD=<merchant password>
+APP_BASE_URL=https://<public-host>
+PAYPAL_WEBHOOK_ID=<registered webhook id>
+CHANNEL3_WEBHOOK_SECRET=<Svix signing secret>
 ```
+
+## 16. Implementation Review and Production Boundaries
+
+- DropBack requires merchant sign-in for dashboard data and actions. Local demo credentials are development-only. Production requires explicit merchant login credentials and a strong session signing key.
+- PayPal order totals are built from server-side catalog prices. Client secrets remain on the backend. Capture, refund, and webhook verification use stable idempotency or event IDs. Refunds require merchant approval; automatic refund execution is disabled.
+- Sample orders exist only in local development and are marked as samples. They cannot be refunded because they have no real PayPal capture. Production does not seed sample orders.
+- Currency amounts use decimal database columns and money values are rounded to two decimal places. PostgreSQL is supported through SQLAlchemy/Alembic; local development uses SQLite.
+- This implementation is single-merchant. It does not implement PayPal partner onboarding, merchant consent, per-merchant credentials, account recovery, or multi-tenant data isolation. A public multi-merchant SaaS release needs those capabilities before inviting unrelated merchants.
+- Real money use also requires production PayPal approval, live credentials, registered PayPal and Channel3 webhooks, a public HTTPS host, PostgreSQL backups, secret management, monitoring, and operational recovery procedures. Development is hard-restricted to PayPal Sandbox.

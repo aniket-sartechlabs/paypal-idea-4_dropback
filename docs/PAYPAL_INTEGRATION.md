@@ -3,7 +3,7 @@
 **Target Environment:** PayPal Sandbox (`https://api-m.sandbox.paypal.com`)
 **API Version:** Orders v2, Payments v2 (Captures/Refunds)
 **SDK:** PayPal JavaScript SDK v6
-**Tested:** 2026-11-10
+**Integration status:** PayPal Sandbox authentication and order creation are verified. The checkout uses USD, but the configured sandbox payee rejected that currency during buyer approval. Seller receiving-currency setup must be corrected before capture/refund can be verified.
 
 ---
 
@@ -41,9 +41,9 @@ grant_type=client_credentials
 ```json
 {
   "scope": "...https://uri.paypal.com/services/payments/refund...",
-  "access_token": "A21AALkr...",
+  "access_token": "<REDACTED_SANDBOX_ACCESS_TOKEN>",
   "token_type": "Bearer",
-  "app_id": "APP-0E076702VF501574N",
+  "app_id": "<SANDBOX_APP_ID>",
   "expires_in": 32400,
   "nonce": "2026-11-10T08:02:26Z..."
 }
@@ -74,7 +74,7 @@ grant_type=client_credentials
   "intent": "CAPTURE",
   "purchase_units": [
     {
-      "reference_id": "db-ref-<uuid>",
+      "reference_id": "<INTERNAL_ORDER_ID>",
       "description": "Premium Espresso Machine - DropBack Test",
       "soft_descriptor": "DROPBACK",
       "amount": {
@@ -87,7 +87,7 @@ grant_type=client_credentials
       "items": [
         {
           "name": "Premium Espresso Machine",
-          "description": "DeLonghi La Specialista Arte",
+          "description": "<PRODUCT_DESCRIPTION>",
           "sku": "ESPRESSO-DLG-001",
           "unit_amount": { "currency_code": "USD", "value": "200.00" },
           "quantity": "1",
@@ -109,13 +109,13 @@ grant_type=client_credentials
 **Response (201 Created):**
 ```json
 {
-  "id": "29143304YR052760W",
+  "id": "<SANDBOX_ORDER_ID>",
   "status": "CREATED",
   "links": [
-    { "href": "https://api.sandbox.paypal.com/v2/checkout/orders/29143304YR052760W", "rel": "self", "method": "GET" },
-    { "href": "https://www.sandbox.paypal.com/checkoutnow?token=29143304YR052760W", "rel": "approve", "method": "GET" },
-    { "href": "https://api.sandbox.paypal.com/v2/checkout/orders/29143304YR052760W", "rel": "update", "method": "PATCH" },
-    { "href": "https://api.sandbox.paypal.com/v2/checkout/orders/29143304YR052760W/capture", "rel": "capture", "method": "POST" }
+    { "href": "https://api-m.sandbox.paypal.com/v2/checkout/orders/<SANDBOX_ORDER_ID>", "rel": "self", "method": "GET" },
+    { "href": "https://www.sandbox.paypal.com/checkoutnow?token=<SANDBOX_ORDER_ID>", "rel": "approve", "method": "GET" },
+    { "href": "https://api-m.sandbox.paypal.com/v2/checkout/orders/<SANDBOX_ORDER_ID>", "rel": "update", "method": "PATCH" },
+    { "href": "https://api-m.sandbox.paypal.com/v2/checkout/orders/<SANDBOX_ORDER_ID>/capture", "rel": "capture", "method": "POST" }
   ]
 }
 ```
@@ -125,16 +125,16 @@ grant_type=client_credentials
 **Response (200 OK):**
 ```json
 {
-  "id": "29143304YR052760W",
+  "id": "<SANDBOX_ORDER_ID>",
   "intent": "CAPTURE",
   "status": "CREATED",
   "purchase_units": [
     {
-      "reference_id": "dropback-test-001",
+      "reference_id": "<INTERNAL_ORDER_ID>",
       "amount": { "currency_code": "USD", "value": "200.00" },
       "payee": {
-        "email_address": "sb-oreai53359961@business.example.com",
-        "merchant_id": "B5DU7MB92L246",
+        "email_address": "<SANDBOX_MERCHANT_EMAIL>",
+        "merchant_id": "<SANDBOX_MERCHANT_ID>",
         "display_data": { "brand_name": "DropBack Merchant Demo" }
       },
       "items": [
@@ -156,7 +156,7 @@ grant_type=client_credentials
 
 The buyer approves via the PayPal checkout URL or SDK button.
 - URL: `https://www.sandbox.paypal.com/checkoutnow?token={order_id}`
-- SDK: `onApprove(data)` callback provides `{ orderID: "..." }`
+- SDK v6: `onApprove(data)` callback provides `{ orderId: "..." }`
 - After approval: order status transitions `CREATED` → `APPROVED`
 
 ### D. Capture Order (`POST /v2/checkout/orders/{id}/capture`)
@@ -164,15 +164,15 @@ The buyer approves via the PayPal checkout URL or SDK button.
 **Response (201 Created):**
 ```json
 {
-  "id": "29143304YR052760W",
+  "id": "<SANDBOX_ORDER_ID>",
   "status": "COMPLETED",
   "purchase_units": [
     {
-      "reference_id": "dropback-test-001",
+      "reference_id": "<INTERNAL_ORDER_ID>",
       "payments": {
         "captures": [
           {
-            "id": "3C0227123A812841J",
+            "id": "<SANDBOX_CAPTURE_ID>",
             "status": "COMPLETED",
             "amount": { "currency_code": "USD", "value": "200.00" },
             "final_capture": true,
@@ -185,7 +185,7 @@ The buyer approves via the PayPal checkout URL or SDK button.
 }
 ```
 
-**⚠ Key: The `capture_id` (`3C0227123A812841J`) is needed for refunds.**
+**Key:** The returned `capture_id` is needed for refunds.
 
 ---
 
@@ -329,19 +329,17 @@ POST /v1/notifications/verify-webhook-signature
 
 | Test | Status | Details |
 |---|---|---|
-| OAuth Token | ✅ 200 OK | Bearer token, 32,400s expiry, refund scope confirmed |
-| Create Order | ✅ 201 Created | Order `29143304YR052760W`, status `CREATED` |
-| Retrieve Order | ✅ 200 OK | Full item/SKU data, payee merchant ID `B5DU7MB92L246` |
-| Order with items | ✅ Verified | SKU `ESPRESSO-DLG-001`, category `PHYSICAL_GOODS`, amount `200.00 USD` |
-| Approval URL | ✅ Present | `https://www.sandbox.paypal.com/checkoutnow?token=...` |
-| Refund endpoint | ✅ Accessible | Returns proper `RESOURCE_NOT_FOUND` for invalid capture_id |
-| Webhook list | ✅ 200 OK | 0 existing webhooks |
-| Webhook events | ✅ 205 types | Includes `PAYMENT.CAPTURE.REFUNDED`, `PAYMENT.REFUND.COMPLETED` |
-| Transaction Search | ❌ 403 | `NOT_AUTHORIZED` — requires partner permissions |
+| OAuth Token | ✅ Verified | PayPal Sandbox OAuth succeeds; token stays server-side |
+| Create Order | ✅ Verified | Current storefront creates a server-priced sandbox order |
+| Buyer approval | ⚠️ Blocked | Checkout is denominated in USD; PayPal reported that the configured sandbox merchant does not accept the currency |
+| Capture and refund | ⏳ Pending | Capture and refund code is implemented; a successful buyer approval and capture are required to exercise them end to end |
+| Webhooks | ⏳ Setup required | Register a public HTTPS webhook and set `PAYPAL_WEBHOOK_ID` before production |
+| Transaction Search | Not used | Orders and captures are recorded locally; no partner-level transaction search dependency |
 
 ### Sandbox Accounts
-- **Merchant (Business):** `sb-oreai53359961@business.example.com` (Merchant ID: `B5DU7MB92L246`)
-- **Buyer (Personal):** Check PayPal Developer Dashboard for sandbox personal account
+- **Merchant (Business):** use the sandbox app configured in the backend `.env`; do not commit account credentials or IDs
+- **Buyer (Personal):** use a separate personal sandbox account from PayPal Developer Dashboard → Sandbox Accounts
+- **Currency:** create or configure the sandbox Business seller and REST app to accept USD, or configure the catalog and checkout consistently for another supported merchant currency. Do not relabel the existing USD prices without converting them.
 
 ---
 
