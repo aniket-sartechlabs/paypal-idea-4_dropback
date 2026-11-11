@@ -300,6 +300,7 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
                   <div>
                     <button
                       type="button"
+                      data-testid="price-check-btn"
                       className="button button-accent"
                       onClick={handlePriceCheck}
                       disabled={checkingPrice}
@@ -348,7 +349,7 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
                         <span style={{ fontSize: 11, color: '#64748b' }}>
                           ⚡ Instant settlement prevents physical return shipping and repackaging.
                         </span>
-                        <button type="submit" className="button button-dark" disabled={submitting}>
+                        <button type="submit" data-testid="submit-claim-btn" className="button button-dark" disabled={submitting}>
                           {submitting ? <><LoaderCircle size={15} className="spin" /> Submitting…</> : <>Submit Price-Match Claim <ArrowRight size={15} /></>}
                         </button>
                       </div>
