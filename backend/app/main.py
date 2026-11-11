@@ -6,7 +6,10 @@ import hmac
 import json
 import logging
 import secrets
+import subprocess
+import sys
 import time
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Annotated
@@ -36,6 +39,7 @@ settings = get_settings()
 COOKIE_NAME = "dropback_session"
 serializer = URLSafeTimedSerializer(settings.secret_key or ("dev-only-dropback-key" if not settings.is_production else ""), salt="dropback-session-v1")
 login_failures: dict[str, list[float]] = {}
+sandbox_demo_process: subprocess.Popen | None = None
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -86,6 +90,7 @@ class ProductInput(BaseModel):
     currency: str = Field(default="USD", min_length=3, max_length=3)
     protection_days: int = Field(default=14, ge=1, le=90)
     merchant_domain: str | None = Field(default=None, max_length=255)
+    channel3_product_id: str | None = Field(default=None, max_length=120)
 
     @field_validator("currency")
     @classmethod
@@ -126,6 +131,7 @@ class CheckPriceInput(BaseModel):
 class ClaimSubmitInput(BaseModel):
     order_id: str
     product_id: str | None = None
+    price_drop_id: str | None = None
     customer_notes: str = Field(default="", max_length=1500)
     reason: str = Field(default="price_drop_match", max_length=100)
 
@@ -165,6 +171,7 @@ def get_settings_row(db: Session) -> MerchantSettings:
 def product_dict(product: Product) -> dict:
     return {
         "id": product.id, "name": product.name, "sku": product.sku, "description": product.description,
+        "image_url": product.image_url if (product.image_url or "").startswith("https://") else None,
         "category": product.category, "current_price": money(product.current_price), "currency": product.currency,
         "protection_days": product.protection_days, "merchant_domain": product.merchant_domain,
         "channel3_connected": bool(product.channel3_product_id), "channel3_product_id": product.channel3_product_id,
@@ -181,7 +188,7 @@ def order_dict(order: Order) -> dict:
         "buyer_name": order.buyer_name, "buyer_email": order.buyer_email, "total_amount": money(order.total_amount),
         "currency": order.currency, "created_at": order.created_at.isoformat() if order.created_at else None,
         "captured_at": order.captured_at.isoformat() if order.captured_at else None,
-        "items": [{"product_id": item.product_id, "sku": item.sku, "name": item.name, "quantity": item.quantity, "unit_price": money(item.unit_price)} for item in order.items],
+        "items": [{"product_id": item.product_id, "sku": item.sku, "name": item.name, "quantity": item.quantity, "unit_price": money(item.unit_price), "image_url": item.product.image_url if item.product and (item.product.image_url or "").startswith("https://") else None} for item in order.items],
         "refundable": bool(order.capture and order.capture.paypal_capture_id and order.source == "paypal"),
     }
 
@@ -240,6 +247,7 @@ def decision_dict(decision: Decision) -> dict:
         "return_probability": float(decision.return_probability), "estimated_return_cost": money(decision.estimated_return_cost),
         "estimated_savings": money(decision.estimated_savings), "reasoning": reason_text,
         "analysis_report": report,
+        "evidence_source": report.get("evidence_source", "channel3_live"),
         "customer_claim": bool(decision.customer_claim),
         "customer_notes": decision.customer_notes or "",
         "ai_drafted_message": drafted_msg,
@@ -248,7 +256,8 @@ def decision_dict(decision: Decision) -> dict:
         "competitor_price": money(decision.competitor_price) if decision.competitor_price else (money(decision.price_drop.new_price) if decision.price_drop else None),
         "decision": decision.decision, "status": decision.status, "within_window": decision.within_window,
         "budget_available": decision.budget_available, "source": decision.order.source,
-        "can_execute": bool(decision.capture and decision.capture.paypal_capture_id and decision.order.source == "paypal" and decision.status in {"APPROVED", "PENDING_REVIEW"}),
+        "settlement_mode": "paypal_sandbox" if decision.order.source == "paypal" and decision.capture and decision.capture.paypal_capture_id else "demo_ledger",
+        "can_execute": bool(decision.capture and decision.capture.paypal_capture_id and decision.order.source == "paypal" and decision.status in {"APPROVED", "PENDING_REVIEW", "REFUND_PENDING", "REFUND_FAILED"}),
         "created_at": decision.created_at.isoformat() if decision.created_at else None,
         "reviewed_at": decision.reviewed_at.isoformat() if decision.reviewed_at else None,
     }
@@ -309,6 +318,20 @@ def startup() -> None:
         get_settings_row(db)
         if not settings.is_production and db.scalar(select(func.count(Product.id))) == 0:
             seed_demo_data(db)
+        obsolete_coffee_product = db.scalar(select(Product).where(Product.sku == "ESPRESSO-BARISTA-01"))
+        if obsolete_coffee_product:
+            obsolete_coffee_product.active = False
+        # Channel3 does not return product photography for every exact match.
+        # Use real manufacturer/retailer product images for the curated electronics catalog.
+        image_sources = {
+            "SONY-WH1000XM5-BLK": "https://www.sony.com/is/image/gwtprod/6145c1d32e6ac8e63a46c912dc33c5bb?fmt=png-alpha&wid=900",
+            "APPLE-AIRPODS-PRO2": "https://suprememobiles.in/cdn/shop/files/1_9ecff0cb-ba43-4945-b7ec-fc04bd2ab716.png?v=1726040725",
+            "AMZN-KINDLE-PW16": "https://multimedia.bbycastatic.ca/multimedia/products/1500x1500/189/18909/18909672.jpeg",
+        }
+        for sku, image_url in image_sources.items():
+            catalog_product = db.scalar(select(Product).where(Product.sku == sku))
+            if catalog_product and not catalog_product.image_url:
+                catalog_product.image_url = image_url
         db.commit()
 
 
@@ -322,11 +345,10 @@ def seed_demo_data(db: Session) -> None:
             current_price=Decimal("499.00"),
             currency="USD",
             protection_days=14,
-            channel3_product_id="DO0tdjT",
-            last_market_price=Decimal("449.00"),
-            competitor_name="abt.com",
-            competitor_url="https://www.abt.com",
+            channel3_product_id=None,
+            last_market_price=None,
             weight_lbs=Decimal("23.00"),
+            active=False,
         ),
         Product(
             name="Sony WH-1000XM5 Wireless Noise Canceling Headphones",
@@ -336,11 +358,10 @@ def seed_demo_data(db: Session) -> None:
             current_price=Decimal("398.00"),
             currency="USD",
             protection_days=14,
-            channel3_product_id="aggqNMU",
-            last_market_price=Decimal("298.00"),
-            competitor_name="bhphotovideo.com",
-            competitor_url="https://www.bhphotovideo.com",
+            channel3_product_id=None,
+            last_market_price=None,
             weight_lbs=Decimal("0.55"),
+            image_url="https://www.sony.com/is/image/gwtprod/6145c1d32e6ac8e63a46c912dc33c5bb?fmt=png-alpha&wid=900",
         ),
         Product(
             name="Apple AirPods Pro",
@@ -350,11 +371,10 @@ def seed_demo_data(db: Session) -> None:
             current_price=Decimal("249.00"),
             currency="USD",
             protection_days=14,
-            channel3_product_id="qvAURc6",
-            last_market_price=Decimal("199.00"),
-            competitor_name="6ave.com",
-            competitor_url="https://www.6ave.com",
+            channel3_product_id=None,
+            last_market_price=None,
             weight_lbs=Decimal("0.12"),
+            image_url="https://suprememobiles.in/cdn/shop/files/1_9ecff0cb-ba43-4945-b7ec-fc04bd2ab716.png?v=1726040725",
         ),
         Product(
             name="Amazon Kindle Paperwhite",
@@ -364,132 +384,16 @@ def seed_demo_data(db: Session) -> None:
             current_price=Decimal("149.99"),
             currency="USD",
             protection_days=14,
-            channel3_product_id="cTyUOkU",
-            last_market_price=Decimal("129.99"),
-            competitor_name="amazon.com",
-            competitor_url="https://www.amazon.com",
+            channel3_product_id=None,
+            last_market_price=None,
             weight_lbs=Decimal("0.45"),
+            image_url="https://multimedia.bbycastatic.ca/multimedia/products/1500x1500/189/18909/18909672.jpeg",
         ),
     ]
     db.add_all(products)
     db.flush()
 
-    demo_orders = [
-        (products[0], 1, Decimal("499.00"), 4, "Rohan Shah", "rohan.shah@example.com"),
-        (products[1], 1, Decimal("398.00"), 2, "Maya Chen", "maya.chen@example.com"),
-        (products[2], 1, Decimal("249.00"), 1, "Priya Nair", "priya.nair@example.com"),
-        (products[3], 1, Decimal("149.99"), 6, "Jordan Lee", "jordan.lee@example.com"),
-        (products[1], 1, Decimal("398.00"), 8, "Alex Morgan", "alex.morgan@example.com"),
-        (products[2], 2, Decimal("249.00"), 11, "Sam Rivera", "sam.rivera@example.com"),
-    ]
-
-    created_orders = []
-    for product, quantity, unit_price, days_ago, name, email in demo_orders:
-        created = now_utc() - timedelta(days=days_ago, hours=3)
-        order = Order(
-            request_key=f"sample-{uuid4()}",
-            status="COMPLETED",
-            source="sample",
-            buyer_name=name,
-            buyer_email=email,
-            total_amount=unit_price * quantity,
-            currency="USD",
-            created_at=created,
-            captured_at=created,
-        )
-        order.items.append(OrderItem(product_id=product.id, sku=product.sku, name=product.name, quantity=quantity, unit_price=unit_price))
-        order.capture = Capture(
-            status="COMPLETED",
-            amount=unit_price * quantity,
-            refunded_amount=Decimal("0.00"),
-            currency="USD",
-            capture_key=f"sample-capture-{uuid4()}",
-            captured_at=created,
-        )
-        db.add(order)
-        created_orders.append((order, product, unit_price, days_ago, name))
-    db.flush()
-
-    # Pre-seed Price Drops for Sony headphones and Breville espresso machine
-    drop_breville = PriceDrop(
-        product_id=products[0].id,
-        old_price=Decimal("499.00"),
-        new_price=Decimal("449.00"),
-        drop_amount=Decimal("50.00"),
-        drop_percentage=Decimal("10.020"),
-        source="channel3",
-        detected_at=now_utc() - timedelta(hours=28),
-        processed=True,
-    )
-    drop_sony = PriceDrop(
-        product_id=products[1].id,
-        old_price=Decimal("398.00"),
-        new_price=Decimal("298.00"),
-        drop_amount=Decimal("100.00"),
-        drop_percentage=Decimal("25.126"),
-        source="channel3",
-        detected_at=now_utc() - timedelta(hours=14),
-        processed=True,
-    )
-    db.add_all([drop_breville, drop_sony])
-    db.flush()
-
-    # Pre-seed Maya Chen's Customer-Initiated Return/Price-Match Claim
-    maya_order = created_orders[1][0]
-    maya_drafted_msg = generate_customer_message("Maya Chen", products[1].name, 100.0, "bhphotovideo.com")
-    maya_claim = Decision(
-        price_drop_id=drop_sony.id,
-        capture_id=maya_order.capture.id,
-        order_id=maya_order.id,
-        decision="REFUND",
-        refund_amount=Decimal("100.00"),
-        reasoning=(
-            "Actuarial analysis calculated an 86% return likelihood for Sony WH-1000XM5. "
-            "Customer submitted price-match claim after discovering $100 price gap at B&H Photo Video. "
-            "Preempting reverse shipping ($12.50) and open-box restocking loss ($139.30) saves $51.80 in net merchant gross margin."
-        ),
-        return_probability=0.86,
-        estimated_return_cost=Decimal("151.80"),
-        estimated_savings=Decimal("51.80"),
-        within_window=True,
-        budget_available=True,
-        customer_claim=True,
-        customer_notes="I noticed B&H Photo and Beach Camera are selling this for $298.00 - an $100 price drop! I don't want the hassle of returning, can you credit the difference under DropBack protection?",
-        ai_drafted_message=maya_drafted_msg,
-        competitor_name="bhphotovideo.com",
-        competitor_price=Decimal("298.00"),
-        status="PENDING_REVIEW",
-    )
-
-    # Pre-seed Rohan Shah's recommendation
-    rohan_order = created_orders[0][0]
-    rohan_drafted_msg = generate_customer_message("Rohan Shah", products[0].name, 50.0, "abt.com")
-    rohan_claim = Decision(
-        price_drop_id=drop_breville.id,
-        capture_id=rohan_order.capture.id,
-        order_id=rohan_order.id,
-        decision="REFUND",
-        refund_amount=Decimal("50.00"),
-        reasoning=(
-            "Actuarial analysis calculated a 78% return likelihood for Barista Express Espresso Machine. "
-            "Competitor Abt.com discount of $50.00 creates strong remorse incentive. "
-            "Heavy appliance reverse freight ($42.50) and restocking/inspection ($200.00) makes a proactive partial refund significantly cheaper."
-        ),
-        return_probability=0.78,
-        estimated_return_cost=Decimal("242.50"),
-        estimated_savings=Decimal("192.50"),
-        within_window=True,
-        budget_available=True,
-        customer_claim=False,
-        customer_notes="",
-        ai_drafted_message=rohan_drafted_msg,
-        competitor_name="abt.com",
-        competitor_price=Decimal("449.00"),
-        status="PENDING_REVIEW",
-    )
-
-    db.add_all([maya_claim, rohan_claim])
-    add_action(db, "DEMO_DATA_SEEDED", details={"orders": len(demo_orders), "products": len(products), "active_claims": 2})
+    add_action(db, "LIVE_CATALOG_SEEDED", details={"products": len(products), "sample_orders": 0})
 
 
 async def clear_channel3_link(product: Product) -> None:
@@ -510,6 +414,48 @@ def health():
             "paypal_environment": settings.paypal_env, "channel3_configured": bool(settings.channel3_api_key),
             "channel3_webhook_configured": bool(settings.channel3_webhook_secret),
             "llm_configured": bool(settings.openai_api_key or settings.gemini_api_key)}
+
+
+@app.post("/api/v1/demo/run")
+def start_sandbox_demo(request: Request):
+    """Launch the real buyer-to-refund walkthrough from its dedicated local URL."""
+    global sandbox_demo_process
+    client_host = request.client.host if request.client else ""
+    if client_host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
+        raise HTTPException(403, "The demo launcher is available only on this machine.")
+    if settings.is_production or settings.paypal_env.lower() != "sandbox":
+        raise HTTPException(503, "The automated purchase walkthrough is restricted to PayPal Sandbox development.")
+    if not settings.paypal_ready or not settings.paypal_sandbox_buyer_email or not settings.paypal_sandbox_buyer_password or not settings.channel3_api_key:
+        raise HTTPException(503, "Complete the PayPal Sandbox buyer, PayPal API, and Channel3 setup before launching the demo.")
+    if sandbox_demo_process and sandbox_demo_process.poll() is None:
+        return {"started": False, "running": True, "message": "The full Sandbox walkthrough is already running."}
+    root = Path(__file__).resolve().parents[2]
+    log_path = root / "logs" / "sandbox-demo-runner.log"
+    log_path.parent.mkdir(exist_ok=True)
+    log_file = log_path.open("w", encoding="utf-8")
+    sandbox_demo_process = subprocess.Popen(
+        [sys.executable, str(root / "scripts" / "sandbox_demo.py"), "--slow-mo", "20"],
+        cwd=root, stdout=log_file, stderr=subprocess.STDOUT, start_new_session=True,
+    )
+    return {"started": True, "running": True, "message": "The full Sandbox walkthrough is starting in a new browser window.", "log": "logs/sandbox-demo-runner.log"}
+
+
+@app.get("/api/v1/demo/run")
+def sandbox_demo_status(request: Request):
+    client_host = request.client.host if request.client else ""
+    if client_host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
+        raise HTTPException(403, "The demo status is available only on this machine.")
+    process = sandbox_demo_process
+    running = bool(process and process.poll() is None)
+    report_path = Path(__file__).resolve().parents[2] / "demo-video" / "out" / "latest_run.json"
+    report = None
+    if report_path.exists() and not running:
+        try:
+            payload = json.loads(report_path.read_text(encoding="utf-8"))
+            report = {key: payload.get(key) for key in ("environment", "timeline", "captured_amount", "live_price_check", "claim_id", "recommended_refund", "refund_status", "run_error", "created_at")}
+        except (OSError, json.JSONDecodeError):
+            pass
+    return {"running": running, "exit_code": process.poll() if process else None, "report": report, "log": "logs/sandbox-demo-runner.log"}
 
 
 @app.get("/api/v1/auth/me")
@@ -557,16 +503,43 @@ def list_products(db: Db):
     return [product_dict(item) for item in db.scalars(select(Product).where(Product.active.is_(True)).order_by(Product.created_at)).all()]
 
 
+@app.get("/api/v1/store/products")
+def list_store_products(db: Db):
+    """Only sell items with a verified Channel3 product link in the public storefront."""
+    return [product_dict(item) for item in db.scalars(
+        select(Product).where(Product.active.is_(True), Product.channel3_product_id.is_not(None)).order_by(Product.created_at)
+    ).all()]
+
+
 @app.post("/api/v1/products", status_code=201)
-def create_product(body: ProductInput, db: Db, _: Merchant):
+async def create_product(body: ProductInput, db: Db, _: Merchant):
     product = Product(**body.model_dump())
+    if body.channel3_product_id:
+        try:
+            live = await channel3.current_offer(body.channel3_product_id, body.currency)
+        except Channel3Error as exc:
+            raise HTTPException(exc.status_code, str(exc)) from exc
+        if not channel3.matches_product(body.name, body.sku, live.get("title", "")):
+            raise HTTPException(409, "The selected Channel3 listing no longer matches this product. Search again and choose the exact listing.")
+        product.last_market_price = Decimal(str(live["best_offer"]["price"]))
+        product.competitor_name = live["best_offer"]["merchant"]
+        product.competitor_url = live["best_offer"].get("url")
+        # Keep the merchant's curated product image when Channel3 has no image.
+        image_url = live.get("image_url")
+        if isinstance(image_url, str) and image_url.startswith("https://"):
+            product.image_url = image_url
     db.add(product)
     try:
         db.commit()
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(409, "That SKU already exists.") from exc
-    add_action(db, "PRODUCT_CREATED", "product", product.id, {"sku": product.sku})
+    if product.channel3_product_id and not product.channel3_subscription_id:
+        try:
+            product.channel3_subscription_id = await channel3.subscribe(product.channel3_product_id, product.merchant_domain)
+        except Channel3Error as exc:
+            log.warning("Channel3 subscription setup failed for imported product %s: %s", product.id, exc)
+    add_action(db, "PRODUCT_CREATED", "product", product.id, {"sku": product.sku, "channel3_linked": bool(product.channel3_product_id)})
     db.commit()
     return product_dict(product)
 
@@ -580,7 +553,7 @@ def get_product(product_id: str, db: Db):
 
 
 def record_price_drop(db: Session, product: Product, new_price: Decimal, source: str) -> PriceDrop | None:
-    if source in {"merchant", "customer_claim"}:
+    if source in {"merchant", "customer_claim", "customer_claim_live", "demo_fixture"}:
         old_price = as_decimal(product.current_price)
     else:
         old_price = as_decimal(product.last_market_price if product.last_market_price is not None else product.current_price)
@@ -637,6 +610,8 @@ async def check_channel3(product_id: str, db: Db, _: Merchant):
     if product.channel3_product_id and product.channel3_product_id != str(matched_product_id):
         await clear_channel3_link(product)
     product.channel3_product_id = str(matched_product_id)
+    if str(observation.get("image_url") or "").startswith("https://"):
+        product.image_url = observation["image_url"]
     # Channel3 subscriptions provide ongoing, daily-refreshed price-change events. Live search remains the immediate check.
     if product.channel3_product_id and not product.channel3_subscription_id:
         try:
@@ -978,6 +953,8 @@ async def execute_refund(decision_id: str, db: Db, _: Merchant):
         row.status = "REFUNDED"
     elif existing.status == "PENDING":
         row.status = "REFUND_PENDING"
+    elif existing.status in {"FAILED", "CANCELLED"}:
+        row.status = "REFUND_FAILED"
     add_action(db, "REFUND_ISSUED", "refund", existing.id, {"paypal_refund_id": existing.paypal_refund_id, "amount": money(existing.amount), "status": existing.status})
     db.commit()
     return {"status": existing.status, "refund_id": existing.paypal_refund_id, "amount": money(existing.amount), "currency": existing.currency}
@@ -1081,8 +1058,15 @@ def lookup_order(lookup_key: str, db: Db):
     if not order:
         raise HTTPException(404, f"Order '{lookup_key}' was not found. Please verify your Order ID.")
     data = order_dict(order)
-    decision = db.scalar(select(Decision).options(joinedload(Decision.price_drop).joinedload(PriceDrop.product), joinedload(Decision.order)).where(Decision.order_id == order.id))
-    data["claim"] = decision_dict(decision) if decision else None
+    decision = db.scalar(select(Decision).options(joinedload(Decision.price_drop).joinedload(PriceDrop.product), joinedload(Decision.order), joinedload(Decision.capture)).where(Decision.order_id == order.id))
+    if decision:
+        claim = decision_dict(decision)
+        refund = db.scalar(select(Refund).where(Refund.decision_id == decision.id))
+        claim["refund_status"] = refund.status if refund else None
+        claim["paypal_refund_id"] = refund.paypal_refund_id if refund else None
+        data["claim"] = claim
+    else:
+        data["claim"] = None
     return data
 
 
@@ -1094,9 +1078,11 @@ async def check_price_for_claim(body: CheckPriceInput, db: Db):
     order = None
 
     if body.order_id:
-        order = db.scalar(select(Order).options(joinedload(Order.items)).where((Order.id == body.order_id) | (Order.paypal_order_id == body.order_id)))
+        order = db.scalar(select(Order).options(joinedload(Order.items), joinedload(Order.capture)).where((Order.id == body.order_id) | (Order.paypal_order_id == body.order_id)))
         if not order:
             raise HTTPException(404, "Order not found.")
+        if order.source != "paypal" or not order.capture or not order.capture.paypal_capture_id:
+            raise HTTPException(409, "Live price protection requires a completed PayPal Sandbox capture.")
         if order.items:
             product_id = body.product_id or order.items[0].product_id
             product = db.get(Product, product_id) if product_id else None
@@ -1113,44 +1099,64 @@ async def check_price_for_claim(body: CheckPriceInput, db: Db):
     if not product:
         raise HTTPException(404, "Product could not be identified for price check.")
 
+    evidence_source = "channel3_live"
     try:
         comparison = await channel3.search_and_compare(product.name, product.sku, paid_price or float(product.current_price), currency)
-        if not comparison.get("matched"):
-            return {
-                "matched": False,
-                "message": comparison.get("message", "Channel3 could not find an exact match."),
-                "product_name": product.name,
-                "paid_price": paid_price,
-            }
-
-        best = comparison["best_offer"]
-        best_price = float(best["price"])
-        drop = round((paid_price or float(product.current_price)) - best_price, 2)
-        has_drop = drop > 0
-
-        product.last_market_price = Decimal(str(best_price))
-        product.competitor_name = best.get("merchant")
-        product.competitor_url = best.get("url")
-        db.commit()
-
-        return {
-            "matched": True,
-            "product_id": product.id,
-            "product_name": product.name,
-            "sku": product.sku,
-            "paid_price": paid_price,
-            "currency": currency,
-            "best_offer": best,
-            "all_offers": comparison.get("all_offers", []),
-            "competitor_name": best.get("merchant", "Authorized Retailer"),
-            "competitor_price": best_price,
-            "drop_amount": max(0.0, drop),
-            "drop_percentage": round((drop / (paid_price or 1.0)) * 100, 1) if has_drop else 0.0,
-            "price_drop_detected": has_drop,
-            "protection_active": True if not order or (order.captured_at and (now_utc() - order.captured_at).days <= product.protection_days) else False,
-        }
     except Channel3Error as exc:
         raise HTTPException(exc.status_code, str(exc)) from exc
+
+    if not comparison.get("matched"):
+        return {
+            "matched": False,
+            "message": comparison.get("message", "Channel3 could not find an exact match."),
+            "product_name": product.name,
+            "paid_price": paid_price,
+            "evidence_source": evidence_source,
+        }
+
+    best = comparison["best_offer"]
+    best_price = float(best["price"])
+    drop = round((paid_price or float(product.current_price)) - best_price, 2)
+    has_drop = drop > 0
+
+    product.last_market_price = Decimal(str(best_price))
+    product.competitor_name = best.get("merchant")
+    product.competitor_url = best.get("url")
+    price_drop = None
+    if has_drop:
+        # Each customer check is new evidence. Reusing the shared 12-hour
+        # dedupe row made a fresh Channel3 response appear expired at claim time.
+        live_price = as_decimal(best_price)
+        reference_price = as_decimal(paid_price or product.current_price)
+        difference = reference_price - live_price
+        percent = (difference / reference_price * Decimal("100")) if reference_price else Decimal("0")
+        price_drop = PriceDrop(
+            product_id=product.id, old_price=reference_price, new_price=live_price,
+            drop_amount=difference, drop_percentage=percent.quantize(Decimal("0.001")),
+            source="customer_claim_live",
+        )
+        db.add(price_drop)
+        db.flush()
+    db.commit()
+
+    return {
+        "matched": True,
+        "product_id": product.id,
+        "product_name": product.name,
+        "sku": product.sku,
+        "paid_price": paid_price,
+        "currency": currency,
+        "best_offer": best,
+        "all_offers": comparison.get("all_offers", []),
+        "competitor_name": best.get("merchant", "Authorized Retailer"),
+        "competitor_price": best_price,
+        "drop_amount": max(0.0, drop),
+        "drop_percentage": round((drop / (paid_price or 1.0)) * 100, 1) if has_drop else 0.0,
+        "price_drop_detected": has_drop,
+        "price_drop_id": price_drop.id if price_drop else None,
+        "protection_active": True if not order or (order.captured_at and (now_utc() - order.captured_at).days <= product.protection_days) else False,
+        "evidence_source": evidence_source,
+    }
 
 
 @app.post("/api/v1/claims/submit")
@@ -1158,7 +1164,7 @@ async def submit_customer_claim(body: ClaimSubmitInput, db: Db):
     order = db.scalar(select(Order).options(joinedload(Order.items), joinedload(Order.capture)).where((Order.id == body.order_id) | (Order.paypal_order_id == body.order_id)))
     if not order:
         raise HTTPException(404, "Order not found.")
-    if not order.capture:
+    if order.source != "paypal" or not order.capture or not order.capture.paypal_capture_id:
         raise HTTPException(400, "This order does not have a completed capture.")
 
     target_item = None
@@ -1173,33 +1179,51 @@ async def submit_customer_claim(body: ClaimSubmitInput, db: Db):
     if not product:
         raise HTTPException(404, "Product associated with this order item was not found.")
 
-    existing_decision = db.scalar(select(Decision).options(joinedload(Decision.price_drop).joinedload(PriceDrop.product), joinedload(Decision.order)).where(Decision.order_id == order.id))
-    if existing_decision and existing_decision.status in {"PENDING_REVIEW", "APPROVED", "REFUNDED"}:
+    existing_decision = db.scalar(select(Decision).options(joinedload(Decision.price_drop).joinedload(PriceDrop.product), joinedload(Decision.order), joinedload(Decision.capture)).where(Decision.order_id == order.id))
+    if existing_decision and existing_decision.status in {"PENDING_REVIEW", "APPROVED", "REFUNDED", "REFUND_PENDING"}:
         return decision_dict(existing_decision)
 
     purchase_price = float(target_item.unit_price)
     currency = order.currency
-    try:
-        comparison = await channel3.search_and_compare(product.name, product.sku, purchase_price, currency)
-    except Exception:
-        comparison = {"matched": False}
+    days_since = (now_utc() - (order.captured_at or order.created_at)).days
+    within_window = days_since <= product.protection_days
+    if not within_window:
+        raise HTTPException(409, "This purchase is outside its 14-day DropBack price-protection window.")
 
-    if comparison.get("matched") and comparison.get("lower_than_current"):
-        comp_price = float(comparison["best_offer"]["price"])
-        comp_merchant = comparison["best_offer"]["merchant"]
-        drop_val = round(purchase_price - comp_price, 2)
-    elif product.last_market_price and float(product.last_market_price) < purchase_price:
-        comp_price = float(product.last_market_price)
+    price_drop = db.get(PriceDrop, body.price_drop_id) if body.price_drop_id else None
+    if body.price_drop_id:
+        if not price_drop or price_drop.product_id != product.id or price_drop.source not in {"customer_claim_live", "channel3"}:
+            raise HTTPException(409, "The checked price evidence is no longer available. Run the price check again.")
+        if price_drop.detected_at < now_utc() - timedelta(minutes=15):
+            raise HTTPException(409, "The price check expired. Run the live price check again before submitting.")
+        comp_price = float(price_drop.new_price)
         comp_merchant = product.competitor_name or "Authorized Retailer"
         drop_val = round(purchase_price - comp_price, 2)
+        evidence_source = "channel3_live"
+        if drop_val <= 0:
+            raise HTTPException(409, "The checked offer is no longer below the purchase price.")
     else:
-        comp_price = round(purchase_price * 0.85, 2)
-        comp_merchant = "Marketplace Retailer"
-        drop_val = round(purchase_price - comp_price, 2)
+        evidence_source = "channel3_live"
+        try:
+            comparison = await channel3.search_and_compare(product.name, product.sku, purchase_price, currency)
+        except Channel3Error as exc:
+            raise HTTPException(exc.status_code, str(exc)) from exc
+
+        if comparison.get("matched") and comparison.get("lower_than_current"):
+            comp_price = float(comparison["best_offer"]["price"])
+            comp_merchant = comparison["best_offer"]["merchant"]
+            drop_val = round(purchase_price - comp_price, 2)
+        else:
+            raise HTTPException(409, "Channel3 did not find a lower in-stock offer for this exact product.")
 
     drop_pct = round((drop_val / purchase_price) * 100, 2)
 
-    drop = record_price_drop(db, product, Decimal(str(comp_price)), "customer_claim")
+    drop = price_drop or record_price_drop(
+        db,
+        product,
+        Decimal(str(comp_price)),
+        "customer_claim_live",
+    )
     if not drop:
         drop = db.scalar(select(PriceDrop).where(PriceDrop.product_id == product.id).order_by(PriceDrop.detected_at.desc()))
     if not drop:
@@ -1217,8 +1241,6 @@ async def submit_customer_claim(body: ClaimSubmitInput, db: Db):
     db.flush()
 
     settings_row = get_settings_row(db)
-    days_since = (now_utc() - (order.captured_at or order.created_at)).days
-    within_window = days_since <= product.protection_days
     weight = float(product.weight_lbs or 2.0)
     
     reverse_shipping = round(float(settings_row.return_shipping_cost) + (weight * 0.75), 2)
@@ -1244,7 +1266,30 @@ async def submit_customer_claim(body: ClaimSubmitInput, db: Db):
         customer_notes=body.customer_notes,
     )
     probability, model_reason, provider, report = exp_res
+    if isinstance(report, dict):
+        report["evidence_source"] = evidence_source
+        breakdown = report.get("financial_breakdown") if isinstance(report.get("financial_breakdown"), dict) else {}
+        breakdown.update({
+            "purchase_price": purchase_price,
+            "days_since_purchase": days_since,
+            "proposed_refund": money(proposed_refund),
+            "estimated_return_cost": total_return_cost,
+            "reverse_shipping": reverse_shipping,
+            "restocking_cost": restocking_cost,
+            "open_box_loss": open_box_loss,
+            "net_savings": max(0.0, gross_savings),
+        })
+        report["financial_breakdown"] = breakdown
     drafted_msg = report.get("drafted_customer_message") if isinstance(report, dict) else generate_customer_message(order.buyer_name, product.name, float(proposed_refund), comp_merchant)
+    if not isinstance(report, dict):
+        report = {}
+    report["evidence_source"] = evidence_source
+    report["channel3_offer"] = {
+        "price": comp_price,
+        "merchant": comp_merchant,
+        "url": product.competitor_url,
+        "observed_at": now_utc().isoformat(),
+    }
 
     decision = Decision(
         price_drop_id=drop.id,
@@ -1296,11 +1341,13 @@ def get_claim_status(decision_id: str, db: Db):
 
 @app.post("/api/v1/claims/{decision_id}/resolve")
 async def resolve_claim(decision_id: str, body: ClaimResolveInput, db: Db, _: Merchant):
-    decision = db.scalar(select(Decision).options(joinedload(Decision.order).joinedload(Order.capture), joinedload(Decision.capture), joinedload(Decision.price_drop).joinedload(PriceDrop.product)).where(Decision.id == decision_id))
+    decision = db.scalar(select(Decision).options(joinedload(Decision.order).joinedload(Order.capture), joinedload(Decision.order).joinedload(Order.items), joinedload(Decision.capture), joinedload(Decision.price_drop).joinedload(PriceDrop.product)).where(Decision.id == decision_id))
     if not decision:
         raise HTTPException(404, "Claim not found.")
     
     if body.action == "reject":
+        if decision.status not in {"PENDING_REVIEW", "APPROVED", "REFUND_FAILED"}:
+            raise HTTPException(409, "This claim can no longer be rejected.")
         decision.status = "REJECTED"
         decision.reviewed_at = now_utc()
         decision.merchant_message = body.custom_message or "Your claim was reviewed and could not be approved under current return policies."
@@ -1308,31 +1355,72 @@ async def resolve_claim(decision_id: str, body: ClaimResolveInput, db: Db, _: Me
         db.commit()
         return decision_dict(decision)
 
-    decision.status = "APPROVED"
-    decision.reviewed_at = now_utc()
+    if decision.status in {"REFUNDED", "REFUND_PENDING"}:
+        refund = db.scalar(select(Refund).where(Refund.decision_id == decision.id))
+        result = decision_dict(decision)
+        result["refund_status"] = refund.status if refund else None
+        result["paypal_refund_id"] = refund.paypal_refund_id if refund else None
+        return result
+    if decision.status not in {"PENDING_REVIEW", "APPROVED", "REFUND_FAILED"}:
+        raise HTTPException(409, "This claim is no longer awaiting a settlement decision.")
     if body.refund_amount:
+        if as_decimal(body.refund_amount) > as_decimal(decision.refund_amount):
+            raise HTTPException(422, "The refund cannot exceed the verified price difference in this claim.")
         decision.refund_amount = as_decimal(body.refund_amount)
     if body.custom_message:
         decision.merchant_message = body.custom_message
     else:
         decision.merchant_message = decision.ai_drafted_message
     
-    db.commit()
-
     executed_refund = None
-    if decision.capture and decision.capture.paypal_capture_id and decision.order.source == "paypal":
+    if decision.order.source == "sample":
+        decision.status = "APPROVED"
+        decision.reviewed_at = now_utc()
+        db.commit()
+        demo_refund = db.scalar(select(Refund).where(Refund.decision_id == decision.id))
+        if not demo_refund:
+            demo_refund = Refund(
+                decision_id=decision.id,
+                capture_id=decision.capture_id,
+                amount=as_decimal(decision.refund_amount),
+                currency=decision.order.currency,
+                status="DEMO_CREDITED",
+                note_to_payer="Local demo ledger only; no PayPal funds were moved.",
+                idempotency_key=f"demo-refund-{decision.id}",
+                completed_at=now_utc(),
+            )
+            db.add(demo_refund)
+        add_action(db, "DEMO_SETTLEMENT_RECORDED", "decision", decision.id, {"amount": money(decision.refund_amount), "external_payment": False})
+        db.commit()
+    elif decision.capture and decision.capture.paypal_capture_id and decision.order.source == "paypal":
+        # Keep a live claim in review until the PayPal refund succeeds or is explicitly
+        # reported as pending. Never display an approval when the external refund failed.
+        decision.status = "REFUND_PENDING"
+        decision.reviewed_at = now_utc()
+        db.commit()
         try:
             executed_refund = await execute_refund(decision.id, db, _)
         except HTTPException as exc:
-            log.warning("Could not execute live refund for approved claim %s: %s", decision.id, exc.detail)
+            refund = db.scalar(select(Refund).where(Refund.decision_id == decision.id))
+            if refund and refund.status == "FAILED":
+                decision.status = "REFUND_FAILED"
+                db.commit()
+            log.warning("Could not execute live refund for claim %s: %s", decision.id, exc.detail)
+            raise
+    else:
+        raise HTTPException(409, "This claim is not attached to a refundable PayPal capture.")
 
-    add_action(db, "CLAIM_APPROVED", "decision", decision.id, {
+    add_action(db, "CLAIM_SETTLEMENT_RESOLVED", "decision", decision.id, {
         "refund_amount": money(decision.refund_amount),
-        "live_refund_executed": bool(executed_refund),
+        "live_refund_status": executed_refund.get("status") if executed_refund else "DEMO_CREDITED",
     })
     db.commit()
     db.refresh(decision)
-    return decision_dict(decision)
+    result = decision_dict(decision)
+    refund = db.scalar(select(Refund).where(Refund.decision_id == decision.id))
+    result["refund_status"] = refund.status if refund else None
+    result["paypal_refund_id"] = refund.paypal_refund_id if refund else None
+    return result
 
 
 @app.get("/api/v1/apimatic/status")
@@ -1340,9 +1428,125 @@ def apimatic_status():
     return apimatic_mcp.get_plugin_manifest()
 
 
+@app.get("/api/v1/apimatic/sandbox-orders")
+def apimatic_sandbox_orders(db: Db, _: Merchant):
+    rows = db.scalars(
+        select(Order)
+        .options(joinedload(Order.capture), joinedload(Order.items))
+        .where(Order.source == "paypal", Order.paypal_order_id.is_not(None))
+        .order_by(Order.created_at.desc())
+        .limit(10)
+    ).unique().all()
+    return [
+        {
+            "order_id": row.paypal_order_id,
+            "capture_id": row.capture.paypal_capture_id if row.capture else None,
+            "buyer_name": row.buyer_name,
+            "item_name": row.items[0].name if row.items else "PayPal order",
+            "amount": money(row.total_amount),
+            "currency": row.currency,
+            "status": row.status,
+        }
+        for row in rows
+    ]
+
+
 @app.post("/api/v1/apimatic/mcp/invoke")
-async def apimatic_invoke(body: APIMaticInvokeInput):
-    return await apimatic_mcp.invoke_mcp_tool(body.tool, body.arguments)
+async def apimatic_invoke(body: APIMaticInvokeInput, db: Db, _: Merchant):
+    if body.tool != "paypal_issue_capture_refund":
+        return await apimatic_mcp.invoke_mcp_tool(body.tool, body.arguments)
+    if settings.paypal_env.lower() != "sandbox" or "api-m.sandbox.paypal.com" not in settings.paypal_base_url.lower():
+        raise HTTPException(409, "The APIMatic refund runner is restricted to PayPal Sandbox.")
+
+    capture_id = str(body.arguments.get("capture_id", "")).strip()
+    try:
+        submitted_amount = Decimal(str(body.arguments.get("amount")))
+        requested = as_decimal(submitted_amount)
+    except Exception as exc:
+        raise HTTPException(422, "Enter a valid refund amount.") from exc
+    if submitted_amount != requested or requested <= 0:
+        raise HTTPException(422, "Refund amount must be a positive value with no more than two decimal places.")
+    capture = db.scalar(select(Capture).options(joinedload(Capture.order)).where(Capture.paypal_capture_id == capture_id))
+    if not capture or capture.order.source != "paypal" or not capture.paypal_capture_id:
+        raise HTTPException(404, "Choose a captured PayPal Sandbox payment from this merchant account.")
+    requested_currency = str(body.arguments.get("currency", "USD")).upper()
+    if requested_currency != capture.currency.upper():
+        raise HTTPException(409, "Refund currency must match the captured PayPal payment.")
+    active_claim = db.scalar(select(Decision.id).where(
+        Decision.capture_id == capture.id,
+        Decision.decision == "REFUND",
+        Decision.status.in_({"PENDING_REVIEW", "APPROVED", "REFUND_PENDING"}),
+    ))
+    if active_claim:
+        raise HTTPException(409, "This capture has a DropBack claim. Resolve the approved claim from the merchant review flow.")
+
+    request_digest = hashlib.sha256(f"{capture_id}:{requested_currency}:{requested:.2f}".encode()).hexdigest()[:32]
+    request_key = f"db-{request_digest}"
+    prior_action = db.scalar(select(AgentAction).where(
+        AgentAction.action_type == "APIMATIC_REFUND_REQUESTED", AgentAction.entity_id == request_key,
+    ))
+    prior_details = json.loads(prior_action.details or "{}") if prior_action else {}
+    if prior_details.get("refund_status") == "COMPLETED" and prior_details.get("tool_result"):
+        return prior_details["tool_result"]
+
+    pending_dropback = as_decimal(db.scalar(select(func.coalesce(func.sum(Refund.amount), 0)).where(
+        Refund.capture_id == capture.id, Refund.status == "PENDING",
+    )))
+    apimatic_actions = db.scalars(select(AgentAction).where(
+        AgentAction.action_type == "APIMATIC_REFUND_REQUESTED",
+        AgentAction.entity_id != request_key,
+    )).all()
+    pending_apimatic = Decimal("0.00")
+    today_apimatic = Decimal("0.00")
+    today = now_utc().date()
+    for action in apimatic_actions:
+        details = json.loads(action.details or "{}")
+        if details.get("capture_id") == capture_id and details.get("refund_status") in {"PENDING", "REQUESTED"}:
+            pending_apimatic += as_decimal(details.get("amount"))
+            if action.created_at and action.created_at.date() == today:
+                today_apimatic += as_decimal(details.get("amount"))
+
+    settings_row = get_settings_row(db)
+    remaining = max(Decimal("0.00"), as_decimal(capture.amount) - as_decimal(capture.refunded_amount) - pending_dropback - pending_apimatic)
+    already_spent_today = as_decimal(db.scalar(select(func.coalesce(func.sum(Refund.amount), 0)).where(
+        Refund.status.in_({"PENDING", "COMPLETED"}), func.date(Refund.created_at) == today,
+    )))
+    if requested > remaining or requested > as_decimal(settings_row.max_refund_per_order):
+        raise HTTPException(409, "Refund amount exceeds the remaining captured balance or merchant per-order cap.")
+    if already_spent_today + today_apimatic + requested > as_decimal(settings_row.daily_refund_budget):
+        raise HTTPException(409, "Refund amount exceeds the remaining merchant daily refund budget.")
+
+    details = {
+        "capture_id": capture_id,
+        "amount": money(requested),
+        "currency": capture.currency,
+        "refund_status": "REQUESTED",
+    }
+    if prior_action:
+        prior_action.details = json.dumps(details)
+    else:
+        prior_action = AgentAction(action_type="APIMATIC_REFUND_REQUESTED", entity_type="capture", entity_id=request_key, details=json.dumps(details))
+        db.add(prior_action)
+    db.commit()
+
+    result = await apimatic_mcp.invoke_mcp_tool(body.tool, {
+        **body.arguments,
+        "capture_id": capture_id,
+        "amount": f"{requested:.2f}",
+        "currency": requested_currency,
+    })
+    refund_status = result.get("refund_status")
+    details["refund_status"] = refund_status or ("PENDING" if result.get("status") == "EXCEPTION" else "FAILED")
+    details["tool_result"] = result
+    if result.get("status") == "SUCCESS" and refund_status == "COMPLETED":
+        capture.refunded_amount = as_decimal(capture.refunded_amount) + requested
+        capture.status = "REFUNDED" if as_decimal(capture.refunded_amount) >= as_decimal(capture.amount) else "COMPLETED"
+        add_action(db, "APIMATIC_REFUND_ISSUED", "capture", capture_id, {
+            "amount": money(requested), "currency": capture.currency, "paypal_refund_id": result.get("refund_id"),
+        })
+    prior_action.details = json.dumps(details)
+    db.commit()
+    return result
 
 
 @app.post("/api/v1/webhooks/paypal")

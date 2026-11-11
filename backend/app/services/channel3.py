@@ -132,6 +132,7 @@ class Channel3Client:
                 "title": _title(p),
                 "description": p.get("description", ""),
                 "category": p.get("category", "General"),
+                "image_url": p.get("image_url") or p.get("image"),
                 "best_offer": best,
                 "all_offers": valid_offers,
             })
@@ -200,6 +201,7 @@ class Channel3Client:
             "matched": True,
             "product_id": str(matched_id) if matched_id else None,
             "title": title,
+            "image_url": matched.get("image_url") or matched.get("image"),
             "match_confidence": round(match_score, 3),
             "offer_count": len(new_offers),
             "best_offer": best,
@@ -274,10 +276,15 @@ class Channel3Client:
             amount = _offer_price(offer)
             offer_currency = offer.get("currency") or (offer.get("price", {}).get("currency") if isinstance(offer.get("price"), dict) else None) or currency
             if amount and str(offer_currency).upper() == currency.upper() and offer.get("availability") not in {"out_of_stock", "unavailable", False}:
-                valid.append({"price": round(amount, 2), "merchant": str(offer.get("domain") or offer.get("merchant") or "Retailer")[:100]})
+                valid.append({
+                    "price": round(amount, 2),
+                    "merchant": str(offer.get("domain") or offer.get("merchant") or "Retailer")[:100],
+                    "url": offer.get("url"),
+                    "condition": str(offer.get("condition") or "new"),
+                })
         if not valid:
             raise Channel3Error("Channel3 matched the product but returned no live offers.", 404)
-        return {"title": _title(product), "best_offer": min(valid, key=lambda item: item["price"]), "offer_count": len(valid)}
+        return {"id": product.get("id"), "title": _title(product), "image_url": product.get("image_url") or product.get("image"), "best_offer": min(valid, key=lambda item: item["price"]), "offer_count": len(valid)}
 
 
 channel3 = Channel3Client()

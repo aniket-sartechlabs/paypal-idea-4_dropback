@@ -4,6 +4,7 @@ export type Product = {
   sku: string
   description: string
   category: string
+  image_url?: string | null
   current_price: number
   currency: string
   protection_days: number
@@ -29,7 +30,7 @@ export type Order = {
   created_at: string
   captured_at?: string | null
   refundable: boolean
-  items: { product_id: string | null; sku: string; name: string; quantity: number; unit_price: number }[]
+  items: { product_id: string | null; sku: string; name: string; quantity: number; unit_price: number; image_url?: string | null }[]
 }
 
 export type PriceDrop = {
@@ -64,6 +65,9 @@ export type AnalysisReport = {
     proposed_refund?: number
     estimated_return_cost?: number
     net_savings?: number
+    reverse_shipping?: number
+    restocking_cost?: number
+    open_box_loss?: number
   }
 }
 
@@ -84,6 +88,10 @@ export type Decision = {
   estimated_savings: number
   reasoning: string
   analysis_report?: AnalysisReport
+  evidence_source?: 'channel3_live' | 'demo_offer_fixture' | string
+  settlement_mode?: 'paypal_sandbox' | 'demo_ledger' | string
+  refund_status?: string | null
+  paypal_refund_id?: string | null
   customer_claim?: boolean
   customer_notes?: string
   ai_drafted_message?: string
@@ -121,10 +129,13 @@ export type APIMaticStatus = {
   tools_count: number
   tools: { name: string; description: string; parameters: any }[]
   schemas: Record<string, any>
-  last_verified: string
+  context_plugin_name?: string
+  contract_source?: string
+  manifest_loaded?: boolean
 }
 
 export type PriceCheckResult = {
+  price_drop_id?: string | null
   matched: boolean
   product_id?: string
   product_name?: string
@@ -140,6 +151,7 @@ export type PriceCheckResult = {
   best_offer?: { price: number; merchant: string; url?: string }
   all_offers?: { price: number; merchant: string; url?: string }[]
   message?: string
+  evidence_source?: 'channel3_live' | 'demo_offer_fixture' | string
 }
 
 export type Stats = {

@@ -1,16 +1,13 @@
-# DropBack Demo Video Tooling
+# DropBack demo video
 
-`scenes.json` is the single source of truth for the demo video: captions, narration, UI actions (anchored by `data-testid`), and durations.
-The entire cut, including the recorded PayPal sandbox clip, stays **at or under 175 s** (under the 3-minute hackathon hard limit).
+`scenes.json` defines the scenes, narration, captions, and UI targets. The real browser recording and PayPal Sandbox approval clip come from `make sandbox-demo`; the buyer's credential fields are visually masked during capture. Generated recordings and videos are ignored by Git.
 
-| Command | What it does |
-|---|---|
-| `make demo-video-check` (`python scripts/tasks.py demo-video-check`) | Validates `scenes.json` (durations, <= 125 wpm voiceover, verified `data-testid` in UI components), outputs `VIDEO_SCRIPT.md`. |
-| `make demo-video` (`python scripts/tasks.py demo-video`) | `build_video.py`: cuts screen scenes and clips into `demo-video/out/demo_silent.mp4` using ffmpeg. |
+```bash
+make sandbox-demo
+make demo-video-check
+make demo-video
+```
 
-## The PayPal Sandbox Approval Clip (`03_paypal_approval`)
+The final file is `demo-video/out/dropback-sandbox-demo.mp4`. The builder inserts the recorded PayPal approval clip, cuts the browser recording to each scene's timing, burns in captions, and synthesizes narration locally when `espeak` or `espeak-ng` is available. The cut is checked against the configured video duration cap.
 
-The PayPal checkout window is PayPal's official sandbox authentication site (`sandbox.paypal.com`).
-The 15-second clip can be recorded or auto-run with `python scripts/sandbox_buyer.py`:
-- File: `demo-video/clips/paypal_approval.mp4` (gitignored).
-- At most 15 seconds.
+Use `make sandbox-demo ARGS="--headless"` for a hidden browser run. The walkthrough creates a real Sandbox payment and refund. If it stops after a payment step, inspect `demo-video/out/latest_run.json` and the merchant queue before attempting another run.

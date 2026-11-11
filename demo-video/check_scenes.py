@@ -21,7 +21,7 @@ import httpx
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from videolib import ROOT, load_scenes, missing_targets, total_seconds, validate, video_script_md  # noqa: E402
 
-PAGES = ("/store", "/portal", "/portal/sample-order-maya-sony", "/claims", "/apimatic")
+PAGES = ("/store", "/portal", "/claims", "/apimatic")
 
 
 def ui_source(base_url: str | None) -> str:

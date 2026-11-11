@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     paypal_client_id: str = ""
     paypal_client_secret: str = ""
     paypal_base_url: str = "https://api-m.sandbox.paypal.com"
+    paypal_sandbox_buyer_email: str = ""
+    paypal_sandbox_buyer_password: str = ""
     paypal_webhook_id: str = ""
     channel3_api_key: str = ""
     channel3_webhook_secret: str = ""

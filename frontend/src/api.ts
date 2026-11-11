@@ -32,7 +32,7 @@ export const invokeApimaticTool = (tool: string, args: Record<string, any> = {})
 export const lookupOrder = (key: string) => api<any>(`/orders/lookup/${encodeURIComponent(key)}`)
 export const checkPriceForClaim = (payload: { order_id?: string; product_id?: string }) =>
   api<PriceCheckResult>('/claims/check-price', { method: 'POST', body: JSON.stringify(payload) })
-export const submitClaim = (payload: { order_id: string; product_id?: string; customer_notes?: string; reason?: string }) =>
+export const submitClaim = (payload: { order_id: string; product_id?: string; price_drop_id?: string | null; customer_notes?: string; reason?: string }) =>
   api<Decision>('/claims/submit', { method: 'POST', body: JSON.stringify(payload) })
 export const resolveClaim = (id: string, payload: { action: 'approve' | 'reject'; refund_amount?: number; custom_message?: string }) =>
   api<Decision>(`/claims/${id}/resolve`, { method: 'POST', body: JSON.stringify(payload) })

@@ -1,33 +1,32 @@
 {
-  "title": "DropBack: Keep the customer. Give back the difference. Powered by PayPal, Channel3, and AG Grid.",
+  "title": "DropBack: real Sandbox price protection, buyer to merchant",
   "base_url": "http://127.0.0.1:5173",
-  "viewport": {"width": 1920, "height": 1080},
-  "voice": "en-US-JennyNeural",
+  "viewport": { "width": 1920, "height": 1080 },
+  "voice": "en-US; optional local espeak voice-over",
   "words_per_minute": 125,
   "max_total_seconds": 175,
-  "_actions": "Each action is {\"action\": goto|click|hover|type|press|wait_for|wait|scroll_to|highlight, ...}. Targets are data-testid values from the UI; goto takes a path, type takes text, press takes a key, wait takes seconds.",
+  "_actions": "The automated runner drives these same UI targets through a real PayPal Sandbox checkout and live Channel3 price check.",
   "max_clip_seconds": 15,
-  "_clips": "A scene with \"type\": \"clip\" is a manually recorded clip (demo-video/clips/, gitignored; see demo-video/README.md). build_video.py inserts it at that position, trimmed to its duration; it has no actions. check_scenes.py warns if the file is missing, and a mock build skips it.",
+  "_clips": "PayPal approval is captured by the automated buyer runner. Email and password fields are masked in the recorded approval clip.",
   "scenes": [
     {
-      "id": "01_hook",
+      "id": "01_store",
       "duration": 12,
-      "on_screen": "Product returns cost merchants 25% of retail value.",
-      "narration": "Product returns cost merchants 25% of sale price. When prices drop, customers dispute and return items to rebuy cheaper.",
+      "on_screen": "Holloway storefront · Sony WH-1000XM5 · 14-day protection",
+      "narration": "A buyer chooses the Sony headphones from Holloway Goods, with fourteen days of DropBack price protection.",
       "actions": [
-        {"action": "goto", "url": "/store"},
-        {"action": "highlight", "target": "brand"},
-        {"action": "highlight", "target": "store-page"}
+        { "action": "goto", "url": "/store?demo=sandbox" },
+        { "action": "highlight", "target": "product-SONY-WH1000XM5-BLK" }
       ]
     },
     {
-      "id": "02_buy",
-      "duration": 16,
-      "on_screen": "Sony WH-1000XM5: 14-Day DropBack Price Protection",
-      "narration": "Maya buys the Sony WH-1000XM5 headphones for $398 with 14 days of automatic DropBack price protection via PayPal.",
+      "id": "02_checkout",
+      "duration": 18,
+      "on_screen": "Real PayPal Orders v2 checkout · $398.00",
+      "narration": "The storefront creates a real PayPal Sandbox order for the selected product and sends the buyer to PayPal checkout.",
       "actions": [
-        {"action": "highlight", "target": "paypal-checkout-btn"},
-        {"action": "click", "target": "paypal-checkout-btn"}
+        { "action": "click", "target": "add-to-cart-SONY-WH1000XM5-BLK" },
+        { "action": "click", "target": "paypal-checkout-btn" }
       ]
     },
     {
@@ -35,85 +34,58 @@
       "type": "clip",
       "clip": "demo-video/clips/paypal_approval.mp4",
       "duration": 15,
-      "on_screen": "Real PayPal Sandbox Payment Approval",
-      "narration": "PayPal Sandbox authorizes and captures the order securely. Maya receives instant order confirmation with full protection.",
+      "on_screen": "PayPal Sandbox buyer login and payment approval",
+      "narration": "The automated Sandbox buyer signs in and approves the payment. PayPal captures the order before DropBack opens the buyer portal.",
       "actions": []
     },
     {
-      "id": "04_portal_check",
+      "id": "04_price_check",
       "duration": 18,
-      "on_screen": "Day 3: Customer Portal triggers live Channel3 price check",
-      "narration": "Three days later, Maya visits the Customer Portal. She clicks check market price, and Channel3 detects a $100 price drop at B&H Photo.",
+      "on_screen": "Scenario replay · Day 3 · live Channel3 offer",
+      "narration": "In an accelerated third-day scenario, the buyer asks Channel3 to check the exact model against current in-stock offers.",
       "actions": [
-        {"action": "goto", "url": "/portal/sample-order-maya-sony"},
-        {"action": "highlight", "target": "portal-page"},
-        {"action": "click", "target": "price-check-btn"}
+        { "action": "highlight", "target": "portal-page" },
+        { "action": "click", "target": "price-check-btn" }
       ]
     },
     {
-      "id": "05_claim",
+      "id": "05_buyer_claim",
       "duration": 14,
-      "on_screen": "Request Difference Refund — No return shipping or hassle",
-      "narration": "Instead of mailing back the headphones, Maya requests a $100 price match refund under her 14-day guarantee.",
+      "on_screen": "Buyer requests the verified price difference",
+      "narration": "Channel3 finds a lower price. The buyer submits the live evidence and asks for the verified difference instead of returning the item.",
       "actions": [
-        {"action": "wait", "seconds": 2},
-        {"action": "click", "target": "submit-claim-btn"}
+        { "action": "click", "target": "submit-claim-btn" }
       ]
     },
     {
-      "id": "06_merchant_grid",
-      "duration": 20,
-      "on_screen": "AG Grid Console: 86% Return Risk, Case Cost Comparison",
-      "narration": "In the AG Grid merchant console, Maya's claim appears with live Channel3 evidence, an 86% return risk gauge, and pre-calculated return costs.",
+      "id": "06_case_report",
+      "duration": 25,
+      "on_screen": "Merchant review · AG Grid case queue and AI report",
+      "narration": "The merchant reviews the buyer note, verified market offer, return probability, return costs, and a clearly drafted message in AG Grid.",
       "actions": [
-        {"action": "goto", "url": "/claims"},
-        {"action": "highlight", "target": "claims-banner"},
-        {"action": "highlight", "target": "claims-grid"},
-        {"action": "highlight", "target": "channel3-evidence"},
-        {"action": "highlight", "target": "risk-gauge"}
+        { "action": "goto", "url": "/claims" },
+        { "action": "click", "target": "settle-btn" },
+        { "action": "highlight", "target": "key-drivers" }
       ]
     },
     {
-      "id": "07_ai_report",
-      "duration": 22,
-      "on_screen": "AI Case Report: Returning costs $151.80 vs Settle $100. Saves $51.80",
-      "narration": "The merchant opens the case. AI compares $151.80 in physical return shipping and open-box depreciation against a $100 difference refund, saving $51.80 in margin.",
-      "actions": [
-        {"action": "click", "target": "settle-btn"},
-        {"action": "wait_for", "target": "claim-modal"},
-        {"action": "highlight", "target": "key-drivers"}
-      ]
-    },
-    {
-      "id": "08_approve",
-      "duration": 14,
-      "on_screen": "1-Click Settle: AI drafts note, PayPal issues partial refund",
-      "narration": "With an AI-drafted resolution message ready, the merchant clicks Approve. DropBack executes a partial refund on the PayPal capture.",
-      "actions": [
-        {"action": "highlight", "target": "approve-refund-btn"},
-        {"action": "click", "target": "approve-refund-btn"}
-      ]
-    },
-    {
-      "id": "09_confirmed",
-      "duration": 14,
-      "on_screen": "Customer Portal: Refund credited to PayPal account",
-      "narration": "The refund immediately reflects in Maya's PayPal account. Maya keeps her headphones, and the merchant protects their margin.",
-      "actions": [
-        {"action": "goto", "url": "/portal/sample-order-maya-sony"},
-        {"action": "highlight", "target": "portal-page"}
-      ]
-    },
-    {
-      "id": "10_apimatic",
+      "id": "07_refund_result",
       "duration": 16,
-      "on_screen": "APIMatic MCP Protocol: Validated PayPal Orders & Payments v2",
-      "narration": "APIMatic context plugins eliminate LLM hallucinations with validated PayPal OpenAPI schemas, powering live MCP sandbox tool execution.",
+      "on_screen": "Merchant approval · PayPal Payments v2 refund",
+      "narration": "After merchant approval, DropBack sends the difference to the buyer through PayPal Payments v2 with a request idempotency key.",
       "actions": [
-        {"action": "goto", "url": "/apimatic"},
-        {"action": "highlight", "target": "apimatic-page"},
-        {"action": "click", "target": "mcp-execute-btn"},
-        {"action": "highlight", "target": "mcp-response"}
+        { "action": "click", "target": "approve-refund-btn" },
+        { "action": "goto", "url": "/portal" }
+      ]
+    },
+    {
+      "id": "08_apimatic",
+      "duration": 12,
+      "on_screen": "APIMatic PayPal API contracts · Orders v2 and Payments v2",
+      "narration": "APIMatic's PayPal context manifest documents the API contracts used for the real sandbox order, capture, and refund calls.",
+      "actions": [
+        { "action": "goto", "url": "/apimatic" },
+        { "action": "highlight", "target": "apimatic-page" }
       ]
     }
   ]

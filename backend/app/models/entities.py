@@ -61,6 +61,7 @@ class OrderItem(Base):
     quantity: Mapped[int] = mapped_column(Integer)
     unit_price: Mapped[float] = mapped_column(Numeric(10, 2))
     order: Mapped[Order] = relationship(back_populates="items")
+    product: Mapped[Product | None] = relationship()
 
 
 class Capture(Base):

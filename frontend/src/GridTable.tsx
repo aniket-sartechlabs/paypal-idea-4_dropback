@@ -8,12 +8,12 @@ const gridTheme = themeQuartz.withParams({
   headerTextColor: '#475569',
   borderColor: '#e2e8f0',
   rowHoverColor: '#f1f5f9',
-  fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+  fontFamily: 'DM Sans, Inter, system-ui, -apple-system, sans-serif',
   fontSize: 13,
   headerFontSize: 11,
   headerFontWeight: 700,
-  rowHeight: 56,
-  headerHeight: 44,
+  rowHeight: 72,
+  headerHeight: 46,
 })
 
 export type GridTableProps = {
@@ -25,11 +25,15 @@ export type GridTableProps = {
   domLayout?: 'normal' | 'autoHeight' | 'print'
   onRowClicked?: (event: RowClickedEvent<any>) => void
   loading?: boolean
+  rowHeight?: number
 }
 
 const defaultColDef: ColDef = {
   sortable: true,
   resizable: true,
+  minWidth: 92,
+  wrapHeaderText: true,
+  autoHeaderHeight: true,
 }
 
 export default function GridTable({
@@ -41,6 +45,7 @@ export default function GridTable({
   domLayout = 'normal',
   onRowClicked,
   loading = false,
+  rowHeight = 72,
 }: GridTableProps) {
   return (
     <AgGridReact<any>
@@ -56,8 +61,10 @@ export default function GridTable({
       domLayout={domLayout}
       onRowClicked={onRowClicked}
       loading={loading}
+      rowHeight={rowHeight}
       animateRows
       enableCellTextSelection
+      getRowId={params => String(params.data.id || params.data.order_id || params.data.product_id)}
     />
   )
 }

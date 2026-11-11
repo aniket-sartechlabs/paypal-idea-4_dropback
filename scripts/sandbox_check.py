@@ -1,18 +1,8 @@
-"""DropBack & PayPal Sandbox Diagnostic Health Check.
-
-Verifies:
-1. PayPal Sandbox API credentials & OAuth access token
-2. APIMatic Context Plugin & MCP protocol status
-3. Channel3 market intelligence API connectivity
-4. Database & sample claims status
-
-Usage: python scripts/sandbox_check.py
-"""
+"""Check PayPal Sandbox OAuth, the APIMatic contract manifest, and live Channel3 access."""
 
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 import time
 from pathlib import Path
@@ -20,74 +10,57 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "backend"))
 
-from app.config import get_settings
-from app.services.apimatic_mcp import apimatic_mcp
-from app.services.channel3 import channel3
-from app.services.paypal import paypal
+from app.config import get_settings  # noqa: E402
+from app.services.apimatic_mcp import apimatic_mcp  # noqa: E402
+from app.services.channel3 import channel3  # noqa: E402
 
 
 async def check_all() -> int:
     settings = get_settings()
-    print("=" * 65)
-    print("  DROPBACK SYSTEM DIAGNOSTIC HEALTH CHECK")
-    print("=" * 65)
-    print(f"Environment:       {settings.environment}")
-    print(f"PayPal Env:        {settings.paypal_env}")
-    print(f"PayPal Client ID:  {settings.paypal_client_id[:16]}..." if settings.paypal_client_id else "PayPal Client ID:  [NOT SET]")
-    print(f"Channel3 Key:      {'*' * 8}..." if settings.channel3_api_key else "[NOT SET]")
-    print("-" * 65)
-
+    print("DROPBACK SANDBOX READINESS")
+    print(f"Application: {settings.environment}")
+    print(f"PayPal environment: {settings.paypal_env}")
     errors = 0
 
-    # 1. PayPal OAuth & MCP Health Check
-    print("[1/3] Testing PayPal Sandbox via APIMatic MCP...")
+    print("\n[1/3] PayPal Sandbox OAuth")
     try:
-        t0 = time.time()
-        health_res = await apimatic_mcp.invoke_mcp_tool("paypal_check_sandbox_health", {})
-        latency = round((time.time() - t0) * 1000, 1)
-        if health_res.get("status") == "SUCCESS":
-            print(f"  ✓ PayPal Sandbox Connected ({latency} ms)")
-            print(f"    - OAuth Token: Active ({health_res.get('token_prefix')})")
-            print(f"    - APIMatic Contract: {health_res.get('apimatic_contract_status')}")
+        started = time.monotonic()
+        result = await apimatic_mcp.invoke_mcp_tool("paypal_check_sandbox_health", {})
+        if result.get("status") == "SUCCESS":
+            print(f"Ready · OAuth token obtained in {round((time.monotonic() - started) * 1000)} ms")
         else:
-            print(f"  ✗ PayPal Sandbox Check Failed: {health_res.get('error')}")
+            print(f"Not ready · PayPal returned {result.get('status', 'an error')}")
             errors += 1
     except Exception as exc:
-        print(f"  ✗ Exception testing PayPal: {exc}")
+        print(f"Not ready · {type(exc).__name__}")
         errors += 1
 
-    # 2. APIMatic Plugin Manifest Check
-    print("\n[2/3] Checking APIMatic Context Plugin Manifest...")
+    print("\n[2/3] APIMatic Context Plugin manifest")
     manifest = apimatic_mcp.get_plugin_manifest()
-    print(f"  ✓ Plugin Name:    {manifest.get('plugin_name')}")
-    print(f"  ✓ Schema Version: {manifest.get('version')}")
-    print(f"  ✓ MCP Tools:      {manifest.get('tools_count')} registered tools")
-
-    # 3. Channel3 API Connectivity
-    print("\n[3/3] Checking Channel3 Market Price Intelligence...")
-    if settings.channel3_api_key:
-        try:
-            t0 = time.time()
-            res = await channel3.search_products("Sony WH-1000XM5", limit=2)
-            latency = round((time.time() - t0) * 1000, 1)
-            print(f"  ✓ Channel3 API Connected ({latency} ms) — {len(res)} live offers returned")
-        except Exception as exc:
-            print(f"  ! Channel3 Check: {exc} (Demo fallback active)")
+    if manifest.get("manifest_loaded") and manifest.get("tools_count"):
+        print(f"Loaded {manifest['version']} · {manifest['tools_count']} tools · {manifest.get('contract_source')}")
     else:
-        print("  ! Channel3 API Key not provided in .env (pre-seeded market data will be used)")
+        print("Manifest or tool schemas are unavailable.")
+        errors += 1
 
-    print("-" * 65)
-    if errors == 0:
-        print("  ALL CORE CHECKS PASSED — READY FOR DEMO & SUBMISSION")
-    else:
-        print(f"  {errors} CHECK(S) REPORTED ISSUES — Check .env configuration")
-    print("=" * 65)
+    print("\n[3/3] Channel3 live product search")
+    try:
+        started = time.monotonic()
+        signal = await channel3.search_and_compare("Sony WH-1000XM5 Wireless Noise Canceling Headphones", "SONY-WH1000XM5-BLK", 398.00, "USD")
+        if signal.get("matched") and signal.get("product_id"):
+            offer = signal["best_offer"]
+            print(f"Exact listing · {offer['merchant']} · ${offer['price']:.2f} · {round((time.monotonic() - started) * 1000)} ms")
+        else:
+            print("Live API responded, but no exact listing and offer were verified.")
+            errors += 1
+    except Exception as exc:
+        print(f"Not ready · {type(exc).__name__}")
+        errors += 1
+
+    print("\nREADY FOR THE SANDBOX WALKTHROUGH" if errors == 0 else f"\n{errors} readiness check(s) need attention.")
+    print("No order or payment was created by this check.")
     return errors
 
 
-def main() -> int:
-    return asyncio.run(check_all())
-
-
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(asyncio.run(check_all()))

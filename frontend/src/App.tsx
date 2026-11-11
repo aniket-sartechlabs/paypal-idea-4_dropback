@@ -5,7 +5,7 @@ import {
   Activity, ArrowDownRight, ArrowRight, Check, CheckCircle2,
   CircleHelp, ExternalLink, Eye, LayoutDashboard, LoaderCircle, LockKeyhole,
   LogOut, Package, Plus, RefreshCw, RotateCcw, Search, Settings2, ShieldCheck, ShoppingBag, Sparkles,
-  Store, Terminal, TrendingDown, WalletCards, X,
+  Store, Terminal, TrendingDown, UserRound, WalletCards, X,
 } from 'lucide-react'
 import {
   api, getDrops, getOrders, getProducts, getSettings, getStats, money,
@@ -24,7 +24,7 @@ declare global {
           onApprove: (data: { orderId: string }) => Promise<void> | void
           onCancel?: () => void
           onError?: (error: Error) => void
-        }) => { start: (options: { presentationMode: 'auto' }, order: Promise<{ orderId: string }>) => Promise<void> }
+        }) => { start: (options: { presentationMode: 'auto' | 'modal' }, order: Promise<{ orderId: string }>) => Promise<void> }
       }>
     }
   }
@@ -59,7 +59,8 @@ function App() {
   const onLogin = (email: string) => {
     setAuth({ loading: false, authenticated: true, email })
     setToast({ message: 'Welcome back. Your merchant workspace is ready.', kind: 'success' })
-    navigate('/', { replace: true })
+    const next = new URLSearchParams(location.search).get('next')
+    navigate(next?.startsWith('/') ? next : '/', { replace: true })
   }
   const onLogout = async () => {
     await api('/auth/logout', { method: 'POST' }).catch(() => undefined)
@@ -67,7 +68,7 @@ function App() {
     navigate('/login', { replace: true })
   }
 
-  const isPublicRoute = location.pathname === '/store' || location.pathname.startsWith('/portal')
+  const isPublicRoute = location.pathname === '/store' || location.pathname.startsWith('/portal') || location.pathname === '/demo/run'
 
   if (auth.loading && !isPublicRoute) return <div className="loading-screen"><LoaderCircle className="spin" size={22} /><span>Opening your workspace</span></div>
 
@@ -75,8 +76,11 @@ function App() {
     <Routes>
       <Route path="/portal" element={<CustomerPortalPage toast={setToast} />} />
       <Route path="/portal/:orderId" element={<CustomerPortalPage toast={setToast} />} />
+      <Route path="/demo/run" element={<SandboxDemoLaunchPage />} />
       <Route path="/store" element={<Storefront publicMode toast={setToast} />} />
-      <Route path="/login" element={auth.authenticated ? <Navigate to="/" replace /> : <Login onLogin={onLogin} />} />
+      <Route path="/login" element={auth.authenticated
+        ? <Navigate to={new URLSearchParams(location.search).get('next') || '/'} replace />
+        : <Login onLogin={onLogin} />} />
       <Route element={auth.authenticated ? <Shell email={auth.email || ''} onLogout={onLogout} /> : <Login onLogin={onLogin} />}>
         <Route path="/" element={<DashboardPage toast={setToast} />} />
         <Route path="/claims" element={<DecisionsPage toast={setToast} />} />
@@ -95,15 +99,40 @@ function App() {
   </>
 }
 
+function SandboxDemoLaunchPage() {
+  const [state, setState] = useState<{ running: boolean; message?: string; report?: Record<string, any> | null; error?: string }>({ running: true, message: 'Starting the full Sandbox walkthrough…' })
+  useEffect(() => {
+    let alive = true
+    let timer = 0
+    const update = async (start: boolean) => {
+      try {
+        const result = start
+          ? await api<{ running: boolean; message?: string }>('/demo/run', { method: 'POST' })
+          : await api<{ running: boolean; report?: Record<string, any> | null; log?: string }>('/demo/run')
+        if (!alive) return
+        setState(current => ({ ...current, running: result.running, message: 'message' in result ? result.message : current.message, report: 'report' in result ? result.report : current.report, error: undefined }))
+        if (result.running) timer = window.setTimeout(() => void update(false), 1800)
+      } catch (error: any) {
+        if (alive) setState({ running: false, error: error?.message || 'Could not start the Sandbox walkthrough.' })
+      }
+    }
+    void update(true)
+    return () => { alive = false; window.clearTimeout(timer) }
+  }, [])
+  const report = state.report
+  return <main className="demo-launch-page"><section className="demo-launch-card"><span className="demo-launch-mark"><ShieldCheck size={22} /></span><p className="eyebrow">DROPBACK · PAYPAL SANDBOX</p><h1>{state.error ? 'Demo could not start' : state.running ? 'Full demo is running' : report?.refund_status ? 'Sandbox walkthrough complete' : 'Sandbox walkthrough stopped'}</h1><p>{state.error || state.message || 'The automated buyer flow opened in a separate browser window. Keep that window open while it signs in, approves checkout, checks Channel3, and completes merchant review.'}</p>{state.running && <div className="demo-launch-progress"><LoaderCircle size={17} className="spin" /> Running buyer checkout → price check → merchant refund</div>}{report && <div className="demo-launch-result">{report.run_error ? <b>{report.run_error}</b> : <><b>Refund status: {report.refund_status || '—'}</b><span>Captured {report.captured_amount ? money(Number(report.captured_amount)) : '—'} · live Channel3 evidence · accelerated day 3</span></>}</div>}<small>Progress log: logs/sandbox-demo-runner.log · Video: demo-video/out/screen.webm</small></section></main>
+}
+
 function Login({ onLogin }: { onLogin: (email: string) => void }) {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [email, setEmail] = useState(import.meta.env.DEV ? 'demo@dropback.local' : '')
   const [password, setPassword] = useState(import.meta.env.DEV ? 'dropback-demo' : '')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const [show, setShow] = useState(false)
 
-  async function submit(event: FormEvent) {
-    event.preventDefault()
+  async function signIn() {
     setPending(true)
     setError('')
     try {
@@ -114,6 +143,18 @@ function Login({ onLogin }: { onLogin: (email: string) => void }) {
     } finally { setPending(false) }
   }
 
+  function submit(event: FormEvent) {
+    event.preventDefault()
+    void signIn()
+  }
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    if (import.meta.env.DEV && params.get('demo') === 'merchant' && !pending) void signIn()
+  }, [location.search])
+
+  function startBuyerDemo() { navigate('/store?demo=sandbox') }
+
   return <div className="login-page">
     <div className="login-art">
       <div className="login-art-top"><BrandMark /> <span>DROPBACK</span></div>
@@ -121,6 +162,12 @@ function Login({ onLogin }: { onLogin: (email: string) => void }) {
         <div className="quote-tag"><span className="pulse-dot" /> PRICE PROTECTION, AUTOMATED</div>
         <h1>Keep the customer.<br /><em>Give back the difference.</em></h1>
         <p>When a price falls, DropBack helps you refund the difference before a buyer has to return the box.</p>
+        {import.meta.env.DEV && <div className="demo-entry">
+          <button type="button" className="button login-demo-start" onClick={startBuyerDemo}>
+            <UserRound size={16} /> Start a real Sandbox purchase <ArrowRight size={16} />
+          </button>
+          <span>Buy the Sony headphones, then check a live Channel3 offer.</span>
+        </div>}
         <div className="login-proof"><div className="avatar-stack"><i>MC</i><i>RS</i><i>JL</i><i>+4</i></div><span>Thoughtful refunds. Better retention.</span></div>
       </div>
       <div className="login-art-bottom"><span>DROPBACK FOR MERCHANTS</span><span>BUILT AROUND THE BUYER</span></div>
@@ -131,13 +178,19 @@ function Login({ onLogin }: { onLogin: (email: string) => void }) {
         <div className="login-eyebrow">MERCHANT CONSOLE</div>
         <h2>Welcome back</h2>
         <p className="muted">Sign in to inspect customer price-match disputes and save return margins.</p>
+        {import.meta.env.DEV && <div className="demo-entry demo-entry-mobile">
+          <button type="button" className="button button-dark" onClick={startBuyerDemo}>
+            <UserRound size={16} /> Start a real Sandbox purchase <ArrowRight size={16} />
+          </button>
+          <span>PayPal Sandbox checkout and a live Channel3 price check.</span>
+        </div>}
         <form className="login-form" onSubmit={submit}>
           <label>Email address<div className="input-wrap"><span className="field-icon">@</span><input autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} required type="email" /></div></label>
           <label>Password<div className="input-wrap"><LockKeyhole size={16} className="field-icon" /><input autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required type={show ? 'text' : 'password'} /><button className="reveal-button" type="button" onClick={() => setShow(value => !value)} aria-label={show ? 'Hide password' : 'Show password'}><Eye size={16} /></button></div></label>
           {error && <div className="form-error">{error}</div>}
           <button className="button button-dark login-submit" disabled={pending} type="submit">{pending ? <><LoaderCircle size={16} className="spin" /> Signing in…</> : <>Sign in <ArrowRight size={17} /></>}</button>
         </form>
-        {import.meta.env.DEV && <div className="demo-login"><Sparkles size={15} /><div><strong>First time here?</strong><span>Demo access is ready for you.</span><code>demo@dropback.local <b>·</b> dropback-demo</code></div></div>}
+        {import.meta.env.DEV && <div className="demo-login"><Sparkles size={15} /><div><strong>Local merchant preview</strong><span>Run <code>make sandbox-demo</code> for the complete PayPal Sandbox walkthrough.</span></div></div>}
         <div className="login-safe"><ShieldCheck size={15} /> Your merchant workspace is private and protected.</div>
       </div>
       <div className="login-footer"><span>© 2026 DropBack</span><a href="mailto:support@dropback.example">Need help?</a></div>
@@ -153,7 +206,7 @@ const nav = [
   { to: '/products', label: 'Products', icon: Package },
   { to: '/price-drops', label: 'Price signals', icon: TrendingDown },
   { to: '/orders', label: 'Orders', icon: ShoppingBag },
-  { to: '/apimatic', label: 'APIMatic MCP', icon: Terminal },
+  { to: '/apimatic', label: 'API Lab', icon: Terminal },
 ]
 
 function Shell({ email, onLogout }: { email: string; onLogout: () => void }) {
@@ -248,7 +301,7 @@ function DashboardPage({ toast }: { toast: (value: Toast) => void }) {
   }
 
   return <>
-    <PageHeading eyebrow="MONDAY, NOVEMBER 10, 2026" title="Good morning, merchant." description="Protect the customer relationship while keeping an eye on every dollar." right={<><Link className="button button-light" to="/store"><Store size={16} /> View storefront</Link><button className="button button-accent" onClick={checkPrices} disabled={checking}>{checking ? <LoaderCircle size={16} className="spin" /> : <RefreshCw size={16} />}{checking ? 'Checking offers…' : 'Check Channel3 prices'}</button></>} />
+    <PageHeading eyebrow={new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).toUpperCase()} title="Good morning, merchant." description="Protect the customer relationship while keeping an eye on every dollar." right={<><Link className="button button-light" to="/store"><Store size={16} /> View storefront</Link><button className="button button-accent" onClick={checkPrices} disabled={checking}>{checking ? <LoaderCircle size={16} className="spin" /> : <RefreshCw size={16} />}{checking ? 'Checking offers…' : 'Check Channel3 prices'}</button></>} />
     <div className="welcome-strip"><div className="welcome-icon"><Sparkles size={19} /></div><div><b>Your customer price protection is active.</b><span>Channel3 keeps your catalog connected to live offers. Review customer claims and AI recommendations before any refund is sent.</span></div><Link to="/settings" aria-label="Open settings"><ArrowRight size={18} /></Link></div>
     {!stats?.channel3_configured && <div className="connection-callout"><span className="connection-light" /><div><b>Connect Channel3 to start live price monitoring</b><span>Add <code>CHANNEL3_API_KEY</code> to the backend <code>.env</code>, then restart the API. The “Check prices” action queries live offers and starts product subscriptions.</span></div><Link to="/settings">View setup <ArrowRight size={15} /></Link></div>}
     <div className="metrics-grid">
@@ -278,7 +331,7 @@ function Metric({ label, value, note, icon, tint, trend }: { label: string; valu
 
 const orderColumns: ColDef<Order>[] = [
   { field: 'paypal_order_id', headerName: 'ORDER', flex: 1.1, minWidth: 125, valueFormatter: p => p.value ? `#${String(p.value).slice(-8).toUpperCase()}` : `#${p.data?.id.slice(0, 8).toUpperCase()}` },
-  { field: 'buyer_name', headerName: 'BUYER', flex: 1.2, minWidth: 135, valueFormatter: p => p.value || 'Sample buyer' },
+  { field: 'buyer_name', headerName: 'BUYER', flex: 1.2, minWidth: 135, valueFormatter: p => p.value || 'Buyer' },
   { headerName: 'ITEM', flex: 1.5, minWidth: 170, valueGetter: p => p.data?.items.map(item => item.name).join(', ') || '—' },
   { field: 'total_amount', headerName: 'TOTAL', flex: 0.7, minWidth: 95, valueFormatter: p => money(p.value, p.data?.currency) },
   { field: 'status', headerName: 'STATUS', flex: 0.8, minWidth: 100, cellRenderer: (p: { value: string }) => <span className={`order-status ${p.value === 'COMPLETED' ? 'complete' : 'pending'}`}><i />{p.value === 'COMPLETED' ? 'Captured' : p.value}</span> },
@@ -290,7 +343,10 @@ function ProductsPage({ toast }: { toast: (value: Toast) => void }) {
   const [checkingId, setCheckingId] = useState('')
   const [newPrice, setNewPrice] = useState<Record<string, string>>({})
   const [adding, setAdding] = useState(false)
-  const [form, setForm] = useState({ name: '', sku: '', category: 'Electronics', current_price: '', description: '' })
+  const [form, setForm] = useState({ name: '', sku: '', category: 'Electronics', current_price: '', description: '', channel3_product_id: '' })
+  const [channel3Query, setChannel3Query] = useState('')
+  const [channel3Results, setChannel3Results] = useState<any[]>([])
+  const [searchingChannel3, setSearchingChannel3] = useState(false)
 
   async function liveCheck(product: Product) {
     setCheckingId(product.id)
@@ -318,17 +374,35 @@ function ProductsPage({ toast }: { toast: (value: Toast) => void }) {
     event.preventDefault()
     try {
       await api('/products', { method: 'POST', body: JSON.stringify({ ...form, current_price: Number(form.current_price) }) })
-      setForm({ name: '', sku: '', category: 'Electronics', current_price: '', description: '' })
+      setForm({ name: '', sku: '', category: 'Electronics', current_price: '', description: '', channel3_product_id: '' })
+      setChannel3Results([])
       setAdding(false); await refresh(); toast({ kind: 'success', message: 'Product added to your catalog.' })
     } catch (error) { toast({ kind: 'error', message: error instanceof Error ? error.message : 'Product could not be added.' }) }
+  }
+
+  async function searchChannel3() {
+    if (!channel3Query.trim()) return
+    setSearchingChannel3(true)
+    try {
+      const results = await api<any[]>(`/channel3/search?query=${encodeURIComponent(channel3Query.trim())}&limit=8`)
+      setChannel3Results(results)
+      if (!results.length) toast({ kind: 'info', message: 'Channel3 did not return any listings for that search.' })
+    } catch (error) { toast({ kind: 'error', message: error instanceof Error ? error.message : 'Channel3 search failed.' }) }
+    finally { setSearchingChannel3(false) }
   }
 
   return <>
     <PageHeading eyebrow="CATALOG & PRICE MONITORING" title="Products" description="Connect each product to Channel3 and monitor competitor market prices across retailers." right={<button className="button button-dark" onClick={() => setAdding(true)}><Plus size={16} /> Add product</button>} />
     <div className="product-info"><div className="product-info-icon"><Activity size={18} /></div><div><b>Channel3 monitors competitor market prices</b><span>Channel3 tracks real-time competitor prices and in-stock offers across online retailers to catch price drops early.</span></div><span className="source-chip"><span /> CHANNEL3 API</span></div>
-    {adding && <form className="add-product-form" onSubmit={addProduct}><div className="form-heading"><div><b>Add a product</b><span>Use the exact Channel3 product title or matching SKU so price alerts stay on the right item.</span></div><button type="button" className="icon-button" onClick={() => setAdding(false)} aria-label="Close"><X size={18} /></button></div><div className="form-grid"><label>Product name<input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label><label>SKU<input required value={form.sku} onChange={e => setForm({ ...form, sku: e.target.value })} /></label><label>Category<input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} /></label><label>Current price<input required type="number" min="0.01" step="0.01" value={form.current_price} onChange={e => setForm({ ...form, current_price: e.target.value })} /></label></div><label className="full-field">Short description<input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></label><button className="button button-dark" type="submit">Add to catalog <ArrowRight size={16} /></button></form>}
+    {adding && <form className="add-product-form" onSubmit={addProduct}>
+      <div className="form-heading"><div><b>Add from the live Channel3 catalog</b><span>Search Channel3, choose the exact listing, then set Holloway’s selling price.</span></div><button type="button" className="icon-button" onClick={() => setAdding(false)} aria-label="Close"><X size={18} /></button></div>
+      <div className="channel3-catalog-search"><label>Search Channel3 listings<input data-testid="channel3-catalog-search" value={channel3Query} onChange={e => setChannel3Query(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void searchChannel3() } }} placeholder="Sony WH-1000XM5, Kindle Paperwhite…" /></label><button type="button" className="button button-light small-button" onClick={() => void searchChannel3()} disabled={searchingChannel3}>{searchingChannel3 ? <LoaderCircle className="spin" size={14} /> : <Search size={14} />} Search Channel3</button></div>
+      {channel3Results.length > 0 && <div className="channel3-catalog-results">{channel3Results.map((item, index) => <div className="channel3-catalog-result" key={item.id || `${item.title}-${index}`}>{item.image_url && <img src={item.image_url} alt="" loading="lazy" />}<div><b>{item.title}</b><span>{item.best_offer?.merchant || 'Retailer'} · {money(item.best_offer?.price || 0)} · {item.all_offers?.length || 0} current offers</span></div><button type="button" className="button button-light small-button" onClick={() => setForm({ name: item.title, sku: `C3-${String(item.id || index).replace(/[^a-z0-9]/gi, '').toUpperCase()}`, category: item.category || 'Electronics', current_price: '', description: item.description || '', channel3_product_id: String(item.id || '') })}>Select listing</button></div>)}</div>}
+      <div className="form-grid"><label>Product name<input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label><label>SKU<input required value={form.sku} onChange={e => setForm({ ...form, sku: e.target.value })} /></label><label>Category<input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} /></label><label>Holloway selling price<input required type="number" min="0.01" step="0.01" value={form.current_price} onChange={e => setForm({ ...form, current_price: e.target.value })} /></label></div>
+      <label className="full-field">Short description<input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></label><button className="button button-dark" type="submit" disabled={!form.channel3_product_id}>Add verified Channel3 listing <ArrowRight size={16} /></button>
+    </form>}
     <div className="product-list">{products.map((product, i) => <article className="product-row" key={product.id}>
-      <div className={`product-art art-${i % 3}`}><span>{product.category === 'Appliances' ? '☕' : product.category === 'Electronics' ? '◉' : '▱'}</span></div>
+      <div className={`product-art art-${i % 3}`}>{product.image_url ? <img src={product.image_url} alt="" loading="lazy" /> : <span>{product.category === 'Appliances' ? '☕' : product.category === 'Electronics' ? '◉' : '▱'}</span>}</div>
       <div className="product-copy"><div className="product-name-line"><h3>{product.name}</h3><span className={`connection-status ${product.channel3_connected ? 'connected' : ''}`}><i />{product.channel3_connected ? 'Channel3 linked' : 'Not checked yet'}</span></div><div className="product-meta"><span>SKU <b>{product.sku}</b></span><span>{product.category}</span><span>{product.protection_days}-day protection</span></div></div>
       <div className="product-price-box"><span>MERCHANT PRICE</span><b>{money(product.current_price, product.currency)}</b></div>
       <div className="product-controls"><button className="button button-light small-button" onClick={() => liveCheck(product)} disabled={checkingId === product.id} title="Search competitor prices and live offers across retailers">{checkingId === product.id ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />} Check competitor prices</button><form className="price-edit" onSubmit={event => changeMerchantPrice(event, product)}><input aria-label={`New merchant price for ${product.name}`} type="number" min="0.01" step="0.01" placeholder="New price" value={newPrice[product.id] || ''} onChange={e => setNewPrice({ ...newPrice, [product.id]: e.target.value })} /><button disabled={!newPrice[product.id]} className="icon-button" title="Record merchant price update"><ArrowDownRight size={17} /></button></form></div>
@@ -361,11 +435,11 @@ function OrdersPage() {
   const [quick, setQuick] = useState('')
   const columns = useMemo<ColDef<Order>[]>(() => [
     ...orderColumns,
-    { field: 'source', headerName: 'SOURCE', flex: 0.7, minWidth: 95, cellRenderer: (p: { value: string }) => <span className={`source-label ${p.value === 'paypal' ? 'channel' : 'manual'}`}>{p.value === 'paypal' ? 'PAYPAL' : 'SAMPLE'}</span> },
-    { headerName: 'PROTECTION', flex: 0.9, minWidth: 120, cellRenderer: (p: { data: Order }) => <span className={`order-status ${p.data.refundable ? 'complete' : 'pending'}`}><i />{p.data.refundable ? 'Refundable' : 'Sample only'}</span> },
+    { field: 'source', headerName: 'SOURCE', flex: 0.7, minWidth: 95, cellRenderer: (p: { value: string }) => <span className={`source-label ${p.value === 'paypal' ? 'channel' : 'manual'}`}>{p.value === 'paypal' ? 'PAYPAL' : 'OTHER'}</span> },
+    { headerName: 'PROTECTION', flex: 0.9, minWidth: 120, cellRenderer: (p: { data: Order }) => <span className={`order-status ${p.data.refundable ? 'complete' : 'pending'}`}><i />{p.data.refundable ? 'Refundable' : 'Not refundable'}</span> },
   ], [])
   return <><PageHeading eyebrow="CUSTOMER ACTIVITY" title="Orders" description="Captured orders with their original purchase prices and protection status." right={<button className="button button-light" onClick={() => void refresh()}><RefreshCw size={15} /> Refresh</button>} />
-    <div className="orders-summary"><div><span>ALL ORDERS</span><b>{orders.length}</b></div><div><span>IN PROTECTION WINDOW</span><b>{orders.filter(order => order.captured_at && (Date.now() - new Date(order.captured_at).getTime()) < 14 * 86400000).length}</b></div><div><span>PAYPAL CAPTURES</span><b>{orders.filter(order => order.refundable).length}</b></div><div className="summary-help"><ShieldCheck size={17} /><span>Sample orders help you explore the workflow. Real PayPal captures are refundable with merchant approval.</span></div></div>
+    <div className="orders-summary"><div><span>ALL ORDERS</span><b>{orders.length}</b></div><div><span>IN PROTECTION WINDOW</span><b>{orders.filter(order => order.captured_at && (Date.now() - new Date(order.captured_at).getTime()) < 14 * 86400000).length}</b></div><div><span>PAYPAL CAPTURES</span><b>{orders.filter(order => order.refundable).length}</b></div><div className="summary-help"><ShieldCheck size={17} /><span>Refunds are available only for captured PayPal payments and require merchant approval.</span></div></div>
     <div className="section-head orders-head"><div><div className="section-title">Order history</div><p>{loading ? 'Refreshing…' : 'Search captured orders and inspect buyer protection status.'}</p></div><div className="search-field"><Search size={15} /><input placeholder="Search orders" value={quick} onChange={e => setQuick(e.target.value)} /></div></div>
     <div className="table-frame"><div className="ag-theme-quartz grid-wrap order-grid"><Suspense fallback={<div className="grid-loading">Preparing order table…</div>}><GridTable rowData={orders} columnDefs={columns} quickFilterText={quick} pagination paginationPageSize={12} /></Suspense></div></div>
   </>
@@ -408,6 +482,9 @@ function EmptyState({ icon, title, copy, action, compact = false }: { icon: Reac
 }
 
 function Storefront({ publicMode = false, toast }: { publicMode?: boolean; toast: (value: Toast) => void }) {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const sandboxDemo = new URLSearchParams(location.search).get('demo') === 'sandbox'
   const [products, setProducts] = useState<Product[]>([])
   const [config, setConfig] = useState<{ configured: boolean; client_id: string | null; environment: string } | null>(null)
   const [cart, setCart] = useState<Record<string, number>>({})
@@ -417,12 +494,14 @@ function Storefront({ publicMode = false, toast }: { publicMode?: boolean; toast
   const [paymentMessage, setPaymentMessage] = useState('')
   const payButtonRef = useRef<HTMLButtonElement>(null)
   const pendingInternalOrderIdRef = useRef('')
-  const sessionRef = useRef<{ start: (options: { presentationMode: 'auto' }, order: Promise<{ orderId: string }>) => Promise<void> } | null>(null)
+  const sandboxDemoRef = useRef(sandboxDemo)
+  sandboxDemoRef.current = sandboxDemo
+  const sessionRef = useRef<{ start: (options: { presentationMode: 'auto' | 'modal' }, order: Promise<{ orderId: string }>) => Promise<void> } | null>(null)
   const totalCount = Object.values(cart).reduce((sum, count) => sum + count, 0)
   const total = products.reduce((sum, product) => sum + product.current_price * (cart[product.id] || 0), 0)
 
   useEffect(() => {
-    Promise.all([getProducts(), api<{ configured: boolean; client_id: string | null; environment: string }>('/paypal/config')])
+    Promise.all([api<Product[]>('/store/products'), api<{ configured: boolean; client_id: string | null; environment: string }>('/paypal/config')])
       .then(([items, settings]) => { setProducts(items); setConfig(settings) })
       .catch(() => toast({ kind: 'error', message: 'Storefront data could not be loaded.' }))
   }, [toast])
@@ -451,10 +530,16 @@ function Storefront({ publicMode = false, toast }: { publicMode?: boolean; toast
       sessionRef.current = sdk.createPayPalOneTimePaymentSession({
         onApprove: async data => {
           setPaymentMessage('Payment approved — confirming your order…')
-          const capture = await api<{ status: string; amount: number; currency: string }>(`/orders/${data.orderId}/capture`, { method: 'POST' })
-          setPaymentMessage(`Your order is confirmed. ${money(capture.amount, capture.currency)} was captured in PayPal Sandbox.`)
-          pendingInternalOrderIdRef.current = ''
-          setCart({})
+          try {
+            const capture = await api<{ status: string; amount: number; currency: string; internal_order_id?: string }>(`/orders/${data.orderId}/capture`, { method: 'POST' })
+            const internalOrderId = capture.internal_order_id || pendingInternalOrderIdRef.current
+            pendingInternalOrderIdRef.current = ''
+            setCart({})
+            if (internalOrderId) navigate(`/portal/${encodeURIComponent(internalOrderId)}?checkout=complete${sandboxDemoRef.current ? '&scenario_day=3' : ''}`)
+            else setPaymentMessage(`Your order is confirmed. ${money(capture.amount, capture.currency)} was captured in PayPal Sandbox.`)
+          } catch (error) {
+            setPaymentMessage(error instanceof Error ? error.message : 'PayPal approved the payment, but the order capture could not be confirmed.')
+          }
         },
         onCancel: () => {
           const internalOrderId = pendingInternalOrderIdRef.current
@@ -481,7 +566,7 @@ function Storefront({ publicMode = false, toast }: { publicMode?: boolean; toast
         pendingInternalOrderIdRef.current = created.internal_order_id
         return { orderId: created.order_id }
       })()
-      try { await sessionRef.current!.start({ presentationMode: 'auto' }, order) }
+      try { await sessionRef.current!.start({ presentationMode: sandboxDemoRef.current ? 'modal' : 'auto' }, order) }
       catch (error) { setPaymentMessage(error instanceof Error ? error.message : 'Could not start PayPal checkout.') }
     }
     button.addEventListener('click', click)
@@ -500,8 +585,8 @@ function Storefront({ publicMode = false, toast }: { publicMode?: boolean; toast
     </div>
 
     <header className="store-header"><Link to={publicMode ? '/login' : '/'} className="store-brand" data-testid="brand"><BrandMark /><span>HOLLOWAY<small>GOODS FOR GOOD DAYS</small></span></Link><div className="store-header-center">A little more considered.</div><div className="store-header-right"><span className="store-shipping">Complimentary shipping over $100</span><button className="cart-button" onClick={() => document.getElementById('store-cart')?.scrollIntoView({ behavior: 'smooth' })}><ShoppingBag size={17} /><b>{totalCount}</b></button></div></header>
-    <section className="store-hero"><div className="store-hero-copy"><span className="store-kicker"><span /> CAREFULLY CHOSEN, MADE TO LAST</span><h1>Good things,<br /><em>for everyday.</em></h1><p>Thoughtful pieces for a slower morning, a clearer commute, and everything in between.</p><a href="#catalog" className="button button-dark">Explore the collection <ArrowRight size={16} /></a><Link to="/portal" className="store-trust" style={{ textDecoration: 'none', color: 'inherit' }}><ShieldCheck size={15} /> Covered by DropBack price protection for 14 days. <u>Check guarantee →</u></Link></div><div className="store-hero-art"><div className="hero-sun" /><div className="hero-product"><span>☕</span><i /></div><div className="hero-caption"><b>01 / MORNING RITUAL</b><span>Made to be used every day</span></div><div className="hero-decoration decor-one" /><div className="hero-decoration decor-two" /></div></section>
-    <section id="catalog" className="store-catalog"><div className="store-section-title"><div><span>THE HOLLOWAY EDIT</span><h2>Made for the everyday</h2></div><span>VERIFIED CATALOG <i /> IN-STOCK</span></div><div className="store-products">{products.map((product, i) => <article className="store-product" key={product.id}><div className={`store-product-art art-${i % 3}`}><span>{i === 0 ? '☕' : i === 1 ? '◉' : '▱'}</span><label>14-DAY PRICE COVER</label><button className="quick-add" onClick={() => setCart(current => ({ ...current, [product.id]: (current[product.id] || 0) + 1 }))}><Plus size={17} /></button></div><div className="store-product-detail"><div><span>{product.category.toUpperCase()}</span><h3>{product.name}</h3><p>{product.description}</p></div><strong>{money(product.current_price, product.currency)}</strong></div><button className="add-cart-button" onClick={() => setCart(current => ({ ...current, [product.id]: (current[product.id] || 0) + 1 }))}>{cart[product.id] ? <>Add another <span>· {cart[product.id]} in bag</span></> : <>Add to bag <Plus size={15} /></>}</button></article>)}</div></section>
+    <section className="store-hero"><div className="store-hero-copy"><span className="store-kicker"><span /> CAREFULLY CHOSEN, MADE TO LAST</span><h1>Good things,<br /><em>for everyday.</em></h1><p>Everyday technology, curated from live product listings and protected by a 14-day price guarantee.</p><a href="#catalog" className="button button-dark">Explore the collection <ArrowRight size={16} /></a><Link to="/portal" className="store-trust" style={{ textDecoration: 'none', color: 'inherit' }}><ShieldCheck size={15} /> Covered by DropBack price protection for 14 days. <u>Check guarantee →</u></Link></div><div className="store-hero-art"><div className="hero-sun" /><div className="hero-product">{products.find(item => item.sku === 'SONY-WH1000XM5-BLK')?.image_url ? <img src={products.find(item => item.sku === 'SONY-WH1000XM5-BLK')?.image_url || ''} alt="Sony WH-1000XM5 headphones" /> : <span>◉</span>}</div><div className="hero-caption"><b>CHANNEL3 VERIFIED · LIVE CATALOG</b><span>Exact listings. Current offers. 14-day price cover.</span></div><div className="hero-decoration decor-one" /><div className="hero-decoration decor-two" /></div></section>
+    <section id="catalog" className="store-catalog"><div className="store-section-title"><div><span>THE HOLLOWAY EDIT</span><h2>Made for the everyday</h2></div><span>CHANNEL3 VERIFIED <i /> CURRENT LISTINGS</span></div><div className="store-products">{products.length ? products.map((product, i) => <article className="store-product" key={product.id} data-testid={product.sku === 'SONY-WH1000XM5-BLK' ? 'product-SONY-WH1000XM5-BLK' : `product-${product.sku}`}><div className={`store-product-art art-${i % 3}`}>{product.image_url ? <img src={product.image_url} alt={product.name} loading="lazy" /> : <span>{i === 0 ? '◉' : i === 1 ? '▱' : '◌'}</span>}<label>14-DAY PRICE COVER</label><button className="quick-add" data-testid={product.sku === 'SONY-WH1000XM5-BLK' ? 'add-to-cart-SONY-WH1000XM5-BLK' : `add-to-cart-${product.sku}`} aria-label={`Add ${product.name} to bag`} onClick={() => setCart(current => ({ ...current, [product.id]: (current[product.id] || 0) + 1 }))}><Plus size={17} /></button></div><div className="store-product-detail"><div><span>{product.category.toUpperCase()}</span><h3>{product.name}</h3><p>{product.description}</p></div><strong>{money(product.current_price, product.currency)}</strong></div><button className="add-cart-button" data-testid={`add-to-cart-secondary-${product.sku}`} onClick={() => setCart(current => ({ ...current, [product.id]: (current[product.id] || 0) + 1 }))}>{cart[product.id] ? <>Add another <span>· {cart[product.id]} in bag</span></> : <>Add to bag <Plus size={15} /></>}</button></article>) : <div className="store-catalog-empty"><ShieldCheck size={20} /><b>Live listings are being verified</b><span>Holloway adds products to the storefront after an exact Channel3 match and current offer check.</span></div>}</div></section>
     <section className="store-protection"><div className="protection-mark"><ShieldCheck size={26} /></div><div><span>OUR LITTLE PROMISE</span><h2>We watch the price, so you don’t have to.</h2><p>If something you bought drops in price within 14 days, we’ll credit you the difference via PayPal so you don't have to return the box.</p></div><div className="protection-stat"><b>14</b><span>DAYS OF<br />PRICE COVER</span></div></section>
     <section className="store-checkout" id="store-cart"><div className="checkout-left"><span className="store-kicker">YOUR BAG <b>{totalCount.toString().padStart(2, '0')}</b></span><h2>Ready when you are.</h2><p>Take your good things home. We’ll keep watch on the price.</p>{totalCount > 0 ? <div className="cart-lines">{products.filter(product => cart[product.id]).map(product => <div className="cart-line" key={product.id}><span>{product.name} <i>× {cart[product.id]}</i></span><b>{money(product.current_price * cart[product.id], product.currency)}</b><button onClick={() => setCart(current => ({ ...current, [product.id]: Math.max(0, (current[product.id] || 0) - 1) }))} aria-label={`Remove one ${product.name}`}><X size={14} /></button></div>)}<div className="cart-total"><span>Total</span><b>{money(total)}</b></div></div> : <p className="cart-empty">Your bag is waiting for something good.</p>}</div><div className="checkout-right"><div className="checkout-total"><span>ORDER TOTAL</span><b>{money(total)}</b><small>Shipping and taxes calculated at checkout.</small></div><button ref={payButtonRef} data-testid="paypal-checkout-btn" className={`paypal-checkout-button ${!payReady || !eligible || !totalCount ? 'is-disabled' : ''}`} disabled={!payReady || !eligible || !totalCount} type="button"><span className="paypal-word">Pay<span>Pal</span></span><span>{checkingSdk ? 'Preparing secure checkout…' : eligible ? 'Continue with PayPal' : 'PayPal checkout unavailable'}</span><ArrowRight size={17} /></button>{!config?.configured && <div className="checkout-notice">Set PayPal sandbox credentials in the backend environment to enable live checkout.</div>}{paymentMessage && <div className="payment-message" role="status">{paymentMessage}</div>}<div className="checkout-lock"><LockKeyhole size={13} /> Encrypted PayPal Sandbox checkout</div></div></section>
     <footer className="store-footer"><span>HOLLOWAY GOODS</span><span>Made with care. Covered by DropBack.</span><div style={{ display: 'flex', gap: 16, alignItems: 'center' }}><Link to="/portal">14-Day Guarantee Portal <ArrowRight size={14} /></Link><Link to={publicMode ? '/login' : '/'}>Merchant console <ArrowRight size={14} /></Link></div></footer>

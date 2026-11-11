@@ -21,6 +21,12 @@ from playwright.async_api import Error as PwError
 from playwright.async_api import Page, async_playwright
 from playwright.async_api import TimeoutError as PwTimeout
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "backend"))
+from app.config import Settings  # noqa: E402
+
+settings = Settings(_env_file=ROOT / ".env")
+
 RETURN_RE = re.compile(r"/checkout/return|/shop/sandbox-return|/portal", re.I)
 CANCEL_RE = re.compile(r"/checkout/cancel|/shop/sandbox-cancel", re.I)
 CONSENT_RE = re.compile(r"agree|continue|pay now|complete purchase|confirm", re.I)
@@ -82,10 +88,14 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="PayPal Sandbox Buyer Automation")
     ap.add_argument("--url", help="PayPal Sandbox approval URL to confirm")
     ap.add_argument("--pre-login", action="store_true", help="Open headed browser to sandbox.paypal.com for manual session prep")
-    ap.add_argument("--email", default=os.getenv("PAYPAL_SANDBOX_BUYER_EMAIL", "buyer@example.com"))
-    ap.add_argument("--password", default=os.getenv("PAYPAL_SANDBOX_BUYER_PASSWORD", "demo-password"))
+    ap.add_argument("--email", default=os.getenv("PAYPAL_SANDBOX_BUYER_EMAIL") or settings.paypal_sandbox_buyer_email)
+    ap.add_argument("--password", default=os.getenv("PAYPAL_SANDBOX_BUYER_PASSWORD") or settings.paypal_sandbox_buyer_password)
     ap.add_argument("--headless", action="store_true")
     args = ap.parse_args()
+
+    if (args.pre_login or args.url) and (not args.email or not args.password):
+        print("Set PAYPAL_SANDBOX_BUYER_EMAIL and PAYPAL_SANDBOX_BUYER_PASSWORD in .env, or pass --email and --password.")
+        return 2
 
     if args.pre_login:
         async def run_prelogin():

@@ -43,6 +43,9 @@ dist/
 .env.local
 *.pem
 *.key
+logs/
+demo-video/out/
+demo-video/clips/*.mp4
 
 # IDE
 .idea/
