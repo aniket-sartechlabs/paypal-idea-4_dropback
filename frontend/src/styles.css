@@ -103,3 +103,95 @@
 .footer-note{display:flex;align-items:center;gap:7px;color:#889690;font-size:10px}
 .footer-note svg{color:#6c8a7b}
 .footer-actions{display:flex;align-items:center;gap:9px}
+
+
+/* AG Grid Enhanced Cells & Badges */
+.grid-buyer-avatar{width:26px;height:26px;border-radius:50%;background:#e2f0e8;color:#2c6b49;display:grid;place-items:center;font-size:10px;font-weight:700;flex:none}
+.grid-market-badge{display:inline-flex;align-items:center;gap:6px;padding:3px 7px;border-radius:4px;background:#f3f7f4;border:1px solid #dcece1;font-size:10px;font-weight:600;color:#2c5e43}
+.grid-market-badge .comp-domain{color:#446b54;font-weight:700}
+.grid-market-badge .comp-price{color:#238152;font-weight:800}
+.customer-claim-pill{display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border-radius:12px;font-size:9px;font-weight:800;letter-spacing:0.04em;background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe}
+.customer-claim-pill.auto-pill{background:#f8fafc;color:#64748b;border-color:#e2e8f0}
+.customer-claim-pill i{width:5px;height:5px;border-radius:50%;background:#3b82f6}
+.grid-cost-preview{display:flex;flex-direction:column;gap:1px;font-size:10px}
+.grid-cost-preview .cost-loss{color:#b91c1c;font-size:9px}
+.grid-cost-preview .cost-diff{color:#047857;font-weight:700}
+.grid-settle-btn{display:inline-flex;align-items:center;gap:5px;height:29px;padding:0 10px;border-radius:6px;background:#1e3a34;color:#fff;border:0;font-size:10px;font-weight:700;transition:all .15s}
+.grid-settle-btn:hover{background:#142723;transform:translateY(-1px)}
+
+/* Drafted Message Area in Modal */
+.drafted-message-wrap{display:flex;flex-direction:column;gap:8px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px}
+.drafted-message-header{display:flex;justify-content:space-between;align-items:center;font-size:11px;font-weight:700;color:#334155}
+.drafted-message-area{width:100%;min-height:95px;border:1px solid #cbd5e1;border-radius:6px;padding:10px;font-size:11px;line-height:1.55;color:#1e293b;background:#fff;outline:0;font-family:inherit}
+.drafted-message-area:focus{border-color:#059669;box-shadow:0 0 0 3px rgba(16,185,129,.12)}
+
+/* Customer Protection & Claims Portal */
+.portal-page{min-height:100vh;background:#f8fafc;color:#0f172a}
+.portal-header{height:65px;background:#fff;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;padding:0 7vw}
+.portal-brand{display:flex;align-items:center;gap:10px;font:800 13px Manrope,sans-serif;color:#1e293b}
+.portal-back-btn{display:inline-flex;align-items:center;gap:6px;color:#64748b;font-size:11px;font-weight:600}
+.portal-back-btn:hover{color:#0f172a}
+.portal-container{max-width:920px;margin:32px auto 60px;padding:0 20px;display:flex;flex-direction:column;gap:24px}
+.portal-hero{background:linear-gradient(135deg,#0f172a,#1e293b);color:#fff;border-radius:14px;padding:32px 36px;display:flex;justify-content:space-between;align-items:center;position:relative;overflow:hidden}
+.portal-hero h1{font:700 28px/1.2 Manrope,sans-serif;margin:0 0 8px;letter-spacing:-0.03em}
+.portal-hero p{font-size:13px;color:#94a3b8;margin:0;max-width:480px;line-height:1.6}
+.portal-badge{background:rgba(255,255,255,0.1);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.18);padding:14px 18px;border-radius:10px;display:flex;flex-direction:column;align-items:center;text-align:center}
+.portal-badge b{font-size:24px;color:#38bdf8}
+.portal-badge span{font-size:10px;letter-spacing:0.08em;font-weight:700;color:#cbd5e1}
+.order-lookup-card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:22px;box-shadow:0 4px 16px rgba(0,0,0,.03);display:flex;flex-direction:column;gap:14px}
+.order-lookup-form{display:flex;gap:10px}
+.order-lookup-input{flex:1;height:44px;border:1px solid #cbd5e1;border-radius:8px;padding:0 14px;font-size:13px}
+.order-lookup-input:focus{outline:0;border-color:#38bdf8;box-shadow:0 0 0 3px rgba(56,189,248,.15)}
+.order-card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:20px;box-shadow:0 4px 20px rgba(0,0,0,.04)}
+.order-card-head{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:16px;border-bottom:1px solid #f1f5f9}
+.price-check-box{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:18px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.price-check-detected{background:#fef2f2;border-color:#fecaca}
+.price-check-info{display:flex;flex-direction:column;gap:4px}
+.price-check-info b{font-size:14px;color:#1e293b}
+.price-check-info span{font-size:12px;color:#64748b}
+.price-drop-delta-badge{background:#dc2626;color:#fff;padding:4px 9px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:0.02em}
+.claim-submission-card{background:#fafafa;border:1px solid #e5e5e5;border-radius:10px;padding:20px;display:flex;flex-direction:column;gap:12px}
+.claim-submission-card textarea{width:100%;height:80px;border:1px solid #d4d4d4;border-radius:6px;padding:10px;font-size:12px;font-family:inherit;outline:0}
+.claim-submission-card textarea:focus{border-color:#2563eb}
+.claim-status-banner{background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:20px;display:flex;align-items:flex-start;gap:14px}
+.claim-status-banner.pending{background:#eff6ff;border-color:#bfdbfe}
+.claim-status-banner h3{margin:0 0 4px;font-size:15px;color:#065f46}
+.claim-status-banner.pending h3{color:#1e40af}
+.claim-status-banner p{margin:0;font-size:12px;color:#047857;line-height:1.6}
+.claim-status-banner.pending p{color:#1d4ed8}
+
+/* APIMatic MCP Inspector */
+.apimatic-panel{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px}
+.apimatic-card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:22px;box-shadow:0 4px 16px rgba(0,0,0,.03);display:flex;flex-direction:column;gap:14px}
+.apimatic-card-head{display:flex;align-items:center;justify-content:space-between;padding-bottom:12px;border-bottom:1px solid #f1f5f9}
+.apimatic-card-head h3{margin:0;font:700 14px Manrope,sans-serif;color:#1e293b}
+.mcp-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:20px;background:#f3e8ff;color:#7e22ce;font-size:10px;font-weight:800}
+.mcp-tool-select{height:38px;border:1px solid #cbd5e1;border-radius:6px;padding:0 10px;font-size:12px;background:#fff;color:#1e293b}
+.json-viewer{background:#0f172a;color:#38bdf8;padding:14px;border-radius:8px;font-family:monospace;font-size:11px;line-height:1.5;max-height:300px;overflow-y:auto;white-space:pre-wrap}
+
+/* Decision grid: taller for enterprise feel */
+.decision-grid{height:520px}
+
+/* Animated risk bar fill */
+.risk-bar i{display:block;height:100%;border-radius:5px;transition:width 0.6s cubic-bezier(0.4,0,0.2,1)}
+
+/* Modal risk bar animated fill */
+.modal-risk-bar i{display:block;height:100%;background:linear-gradient(90deg,#f59e0b,#dc2626);border-radius:4px;transition:width 0.6s cubic-bezier(0.4,0,0.2,1)}
+
+/* Key drivers list inside modal */
+.key-drivers-list{list-style:none;padding:0;margin:0;display:grid;gap:6px}
+.key-drivers-list li{display:flex;align-items:flex-start;gap:8px;font-size:11px;color:#4b5a54;line-height:1.5;background:#f9faf8;padding:8px 10px;border-radius:6px;border:1px solid #edf0ec}
+.key-drivers-list li::before{content:"→";color:#4ca679;font-weight:700;flex:none;margin-top:1px}
+
+/* Audit log grid (for demo video scene 07) */
+.audit-log-section{margin-top:28px}
+[data-testid="audit-log-grid"] .ag-theme-quartz{height:260px}
+
+/* Channel3 live badge on grid market cell */
+.c3-live-dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,0.2);animation:c3-pulse 2s infinite}
+@keyframes c3-pulse{0%,100%{box-shadow:0 0 0 3px rgba(34,197,94,0.2)}50%{box-shadow:0 0 0 5px rgba(34,197,94,0.08)}}
+
+/* Approve button in modal - elevated for hackathon demo clarity */
+.approve-button.button{background:#1e3a34;color:#fff;border:1px solid #15292a;font-size:12px;min-height:41px;padding:0 18px}
+.approve-button.button:hover:not(:disabled){background:#142723;transform:translateY(-1px)}
+.approve-button.button:disabled{opacity:0.65}

@@ -9,6 +9,11 @@ export type Product = {
   protection_days: number
   merchant_domain?: string | null
   channel3_connected: boolean
+  channel3_product_id?: string | null
+  last_market_price?: number | null
+  competitor_name?: string | null
+  competitor_url?: string | null
+  weight_lbs?: number | null
   active: boolean
 }
 
@@ -47,6 +52,7 @@ export type AnalysisReport = {
   risk_level?: 'HIGH' | 'MEDIUM' | 'LOW' | string
   key_drivers?: string[]
   reasoning?: string
+  drafted_customer_message?: string
   retention_impact?: string
   recommended_action?: string
   provider?: string
@@ -78,6 +84,12 @@ export type Decision = {
   estimated_savings: number
   reasoning: string
   analysis_report?: AnalysisReport
+  customer_claim?: boolean
+  customer_notes?: string
+  ai_drafted_message?: string
+  merchant_message?: string
+  competitor_name?: string | null
+  competitor_price?: number | null
   decision: 'REFUND' | 'SKIP'
   status: string
   within_window: boolean
@@ -85,6 +97,49 @@ export type Decision = {
   source: string
   can_execute: boolean
   created_at: string
+  reviewed_at?: string | null
+}
+
+export type RefundRecord = {
+  id: string
+  decision_id: string
+  paypal_refund_id?: string | null
+  amount: number
+  currency: string
+  status: string
+  note_to_payer: string
+  created_at: string
+  completed_at?: string | null
+}
+
+export type APIMaticStatus = {
+  apimatic_enabled: boolean
+  version: string
+  plugin_name: string
+  environment: string
+  sandbox_ready: boolean
+  tools_count: number
+  tools: { name: string; description: string; parameters: any }[]
+  schemas: Record<string, any>
+  last_verified: string
+}
+
+export type PriceCheckResult = {
+  matched: boolean
+  product_id?: string
+  product_name?: string
+  sku?: string
+  paid_price?: number
+  currency?: string
+  competitor_name?: string
+  competitor_price?: number
+  drop_amount?: number
+  drop_percentage?: number
+  price_drop_detected?: boolean
+  protection_active?: boolean
+  best_offer?: { price: number; merchant: string; url?: string }
+  all_offers?: { price: number; merchant: string; url?: string }[]
+  message?: string
 }
 
 export type Stats = {

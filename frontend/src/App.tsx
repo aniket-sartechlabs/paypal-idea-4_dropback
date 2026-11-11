@@ -2,13 +2,18 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type
 import type { ColDef } from 'ag-grid-community'
 import { Link, NavLink, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import {
-  Activity, ArrowDownRight, ArrowRight, Brain, Check, CheckCircle2,
-  CircleHelp, ExternalLink, Eye, FileText, LayoutDashboard, LoaderCircle, LockKeyhole,
+  Activity, ArrowDownRight, ArrowRight, Check, CheckCircle2,
+  CircleHelp, ExternalLink, Eye, LayoutDashboard, LoaderCircle, LockKeyhole,
   LogOut, Package, Plus, RefreshCw, RotateCcw, Search, Settings2, ShieldCheck, ShoppingBag, Sparkles,
-  Store, TrendingDown, WalletCards, X,
+  Store, Terminal, TrendingDown, WalletCards, X,
 } from 'lucide-react'
-import { api, getDecisions, getDrops, getOrders, getProducts, getSettings, getStats, money } from './api'
-import type { Decision, Order, PriceDrop, Product, Stats } from './types'
+import {
+  api, getDrops, getOrders, getProducts, getSettings, getStats, money,
+} from './api'
+import type { Order, PriceDrop, Product, Stats } from './types'
+import CustomerPortalPage from './CustomerPortalPage'
+import APIMaticPage from './APIMaticPage'
+import DecisionsPage from './DecisionsPage'
 
 declare global {
   interface Window {
@@ -62,18 +67,24 @@ function App() {
     navigate('/login', { replace: true })
   }
 
-  if (auth.loading && location.pathname !== '/store') return <div className="loading-screen"><LoaderCircle className="spin" size={22} /><span>Opening your workspace</span></div>
+  const isPublicRoute = location.pathname === '/store' || location.pathname.startsWith('/portal')
+
+  if (auth.loading && !isPublicRoute) return <div className="loading-screen"><LoaderCircle className="spin" size={22} /><span>Opening your workspace</span></div>
 
   return <>
     <Routes>
+      <Route path="/portal" element={<CustomerPortalPage toast={setToast} />} />
+      <Route path="/portal/:orderId" element={<CustomerPortalPage toast={setToast} />} />
       <Route path="/store" element={<Storefront publicMode toast={setToast} />} />
       <Route path="/login" element={auth.authenticated ? <Navigate to="/" replace /> : <Login onLogin={onLogin} />} />
       <Route element={auth.authenticated ? <Shell email={auth.email || ''} onLogout={onLogout} /> : <Login onLogin={onLogin} />}>
         <Route path="/" element={<DashboardPage toast={setToast} />} />
+        <Route path="/claims" element={<DecisionsPage toast={setToast} />} />
+        <Route path="/agent" element={<Navigate to="/claims" replace />} />
         <Route path="/products" element={<ProductsPage toast={setToast} />} />
         <Route path="/price-drops" element={<PriceDropsPage toast={setToast} />} />
-        <Route path="/agent" element={<DecisionsPage toast={setToast} />} />
         <Route path="/orders" element={<OrdersPage />} />
+        <Route path="/apimatic" element={<APIMaticPage toast={setToast} />} />
         <Route path="/settings" element={<SettingsPage toast={setToast} />} />
         <Route path="/checkout/return" element={<CheckoutStatus success />} />
         <Route path="/checkout/cancel" element={<CheckoutStatus success={false} />} />
@@ -109,7 +120,7 @@ function Login({ onLogin }: { onLogin: (email: string) => void }) {
       <div className="login-quote">
         <div className="quote-tag"><span className="pulse-dot" /> PRICE PROTECTION, AUTOMATED</div>
         <h1>Keep the customer.<br /><em>Give back the difference.</em></h1>
-        <p>When a price falls, DropBack helps you refund the difference before a buyer has to ask.</p>
+        <p>When a price falls, DropBack helps you refund the difference before a buyer has to return the box.</p>
         <div className="login-proof"><div className="avatar-stack"><i>MC</i><i>RS</i><i>JL</i><i>+4</i></div><span>Thoughtful refunds. Better retention.</span></div>
       </div>
       <div className="login-art-bottom"><span>DROPBACK FOR MERCHANTS</span><span>BUILT AROUND THE BUYER</span></div>
@@ -119,7 +130,7 @@ function Login({ onLogin }: { onLogin: (email: string) => void }) {
       <div className="login-form-wrap">
         <div className="login-eyebrow">MERCHANT CONSOLE</div>
         <h2>Welcome back</h2>
-        <p className="muted">Sign in to see where your next customer save is hiding.</p>
+        <p className="muted">Sign in to inspect customer price-match disputes and save return margins.</p>
         <form className="login-form" onSubmit={submit}>
           <label>Email address<div className="input-wrap"><span className="field-icon">@</span><input autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} required type="email" /></div></label>
           <label>Password<div className="input-wrap"><LockKeyhole size={16} className="field-icon" /><input autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required type={show ? 'text' : 'password'} /><button className="reveal-button" type="button" onClick={() => setShow(value => !value)} aria-label={show ? 'Hide password' : 'Show password'}><Eye size={16} /></button></div></label>
@@ -138,27 +149,52 @@ function BrandMark() { return <span className="brand-mark"><span /><span /><span
 
 const nav = [
   { to: '/', label: 'Overview', icon: LayoutDashboard, end: true },
+  { to: '/claims', label: 'Claims & Disputes', icon: Sparkles, badge: true },
   { to: '/products', label: 'Products', icon: Package },
-  { to: '/price-drops', label: 'Price drops', icon: TrendingDown, badge: true },
-  { to: '/agent', label: 'Agent review', icon: Sparkles },
+  { to: '/price-drops', label: 'Price signals', icon: TrendingDown },
   { to: '/orders', label: 'Orders', icon: ShoppingBag },
+  { to: '/apimatic', label: 'APIMatic MCP', icon: Terminal },
 ]
 
 function Shell({ email, onLogout }: { email: string; onLogout: () => void }) {
   const location = useLocation()
   const [open, setOpen] = useState(false)
-  const [pendingDrops, setPendingDrops] = useState(0)
-  useEffect(() => { getDrops().then(rows => setPendingDrops(rows.filter(row => !row.processed).length)).catch(() => undefined) }, [location.pathname])
+  const [pendingClaims, setPendingClaims] = useState(0)
+
+  useEffect(() => {
+    api<any[]>('/agent/decisions')
+      .then(rows => setPendingClaims(rows.filter(row => row.status === 'PENDING_REVIEW').length))
+      .catch(() => undefined)
+  }, [location.pathname])
+
   const title = nav.find(item => (item.end && location.pathname === '/') || item.to === location.pathname)?.label || 'Settings'
+
   return <div className="app-shell">
     <aside className={`sidebar ${open ? 'sidebar-open' : ''}`}>
       <Link to="/" className="brand-lockup"><BrandMark /><span>DROPBACK<small>MERCHANT CONSOLE</small></span></Link>
       <div className="side-caption">WORKSPACE</div>
-      <nav className="side-nav">{nav.map(item => <NavLink key={item.to} to={item.to} end={item.end} onClick={() => setOpen(false)} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><item.icon size={18} strokeWidth={1.8} /><span>{item.label}</span>{item.badge && pendingDrops > 0 && <i className="nav-badge">{pendingDrops}</i>}</NavLink>)}</nav>
+      <nav className="side-nav">
+        {nav.map(item => (
+          <NavLink key={item.to} to={item.to} end={item.end} onClick={() => setOpen(false)} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+            <item.icon size={18} strokeWidth={1.8} />
+            <span>{item.label}</span>
+            {item.badge && pendingClaims > 0 && <i className="nav-badge">{pendingClaims}</i>}
+          </NavLink>
+        ))}
+      </nav>
       <div className="side-caption side-caption-lower">MANAGE</div>
       <NavLink to="/settings" onClick={() => setOpen(false)} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Settings2 size={18} strokeWidth={1.8} /><span>Settings</span></NavLink>
       <div className="sidebar-spacer" />
-      <Link to="/store" target="_blank" className="store-shortcut"><span className="shortcut-icon"><Store size={16} /></span><span><b>Open storefront</b><small>See the buyer experience</small></span><ExternalLink size={14} /></Link>
+      <Link to="/portal" target="_blank" className="store-shortcut" style={{ marginBottom: 6 }}>
+        <span className="shortcut-icon" style={{ background: '#e0f2fe', color: '#0284c7' }}><ShieldCheck size={16} /></span>
+        <span><b>Customer portal</b><small>14-Day Price Guarantee</small></span>
+        <ExternalLink size={14} />
+      </Link>
+      <Link to="/store" target="_blank" className="store-shortcut">
+        <span className="shortcut-icon"><Store size={16} /></span>
+        <span><b>Open storefront</b><small>See buyer experience</small></span>
+        <ExternalLink size={14} />
+      </Link>
       <div className="sidebar-user"><div className="user-avatar">{email.slice(0, 1).toUpperCase()}</div><div className="user-info"><b>{email.split('@')[0]}</b><span>Store owner</span></div><button className="icon-button logout-button" onClick={onLogout} title="Sign out" aria-label="Sign out"><LogOut size={17} /></button></div>
     </aside>
     <main className="main-shell">
@@ -175,25 +211,25 @@ function PageHeading({ eyebrow, title, description, right }: { eyebrow: string; 
 function useWorkspaceData() {
   const [products, setProducts] = useState<Product[]>([])
   const [drops, setDrops] = useState<PriceDrop[]>([])
-  const [decisions, setDecisions] = useState<Decision[]>([])
   const [orders, setOrders] = useState<Order[]>([])
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
+
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const [p, d, a, o, s] = await Promise.all([getProducts(), getDrops(), getDecisions(), getOrders(), getStats()])
-      setProducts(p); setDrops(d); setDecisions(a); setOrders(o); setStats(s)
+      const [p, d, o, s] = await Promise.all([getProducts(), getDrops(), getOrders(), getStats()])
+      setProducts(p); setDrops(d); setOrders(o); setStats(s)
     } finally { setLoading(false) }
   }, [])
+
   useEffect(() => { void refresh() }, [refresh])
-  return { products, drops, decisions, orders, stats, loading, refresh, setProducts, setDrops, setDecisions }
+  return { products, drops, orders, stats, loading, refresh, setProducts, setDrops }
 }
 
 function DashboardPage({ toast }: { toast: (value: Toast) => void }) {
-  const { products, drops, decisions, orders, stats, loading, refresh } = useWorkspaceData()
+  const { products, drops, orders, stats, loading, refresh } = useWorkspaceData()
   const [checking, setChecking] = useState(false)
-  const pending = decisions.filter(row => row.decision === 'REFUND' && row.status === 'PENDING_REVIEW')
   const unprocessed = drops.filter(row => !row.processed)
 
   async function checkPrices() {
@@ -213,19 +249,19 @@ function DashboardPage({ toast }: { toast: (value: Toast) => void }) {
 
   return <>
     <PageHeading eyebrow="MONDAY, NOVEMBER 10, 2026" title="Good morning, merchant." description="Protect the customer relationship while keeping an eye on every dollar." right={<><Link className="button button-light" to="/store"><Store size={16} /> View storefront</Link><button className="button button-accent" onClick={checkPrices} disabled={checking}>{checking ? <LoaderCircle size={16} className="spin" /> : <RefreshCw size={16} />}{checking ? 'Checking offers…' : 'Check Channel3 prices'}</button></>} />
-    <div className="welcome-strip"><div className="welcome-icon"><Sparkles size={19} /></div><div><b>Your price protection is looking good.</b><span>Channel3 keeps your catalog connected to live offers. Review recommendations before any refund is sent.</span></div><Link to="/settings" aria-label="Open settings"><ArrowRight size={18} /></Link></div>
+    <div className="welcome-strip"><div className="welcome-icon"><Sparkles size={19} /></div><div><b>Your customer price protection is active.</b><span>Channel3 keeps your catalog connected to live offers. Review customer claims and AI recommendations before any refund is sent.</span></div><Link to="/settings" aria-label="Open settings"><ArrowRight size={18} /></Link></div>
     {!stats?.channel3_configured && <div className="connection-callout"><span className="connection-light" /><div><b>Connect Channel3 to start live price monitoring</b><span>Add <code>CHANNEL3_API_KEY</code> to the backend <code>.env</code>, then restart the API. The “Check prices” action queries live offers and starts product subscriptions.</span></div><Link to="/settings">View setup <ArrowRight size={15} /></Link></div>}
     <div className="metrics-grid">
-      <Metric label="Orders protected" value={String(stats?.orders_exposed ?? '—')} note="Within protection window" icon={<ShieldCheck size={18} />} tint="green" trend={`${stats?.orders_total ?? 0} orders total`} />
-      <Metric label="Awaiting review" value={String(stats?.recommendations_pending ?? '—')} note="Refund recommendations" icon={<Sparkles size={18} />} tint="purple" trend={`${pending.length} ready`} />
+      <Metric label="Orders protected" value={String(stats?.orders_exposed ?? '—')} note="Within 14-day window" icon={<ShieldCheck size={18} />} tint="green" trend={`${stats?.orders_total ?? 0} orders total`} />
+      <Metric label="Awaiting review" value={String(stats?.recommendations_pending ?? '—')} note="Disputes & claims ready" icon={<Sparkles size={18} />} tint="purple" trend="Pending review" />
       <Metric label="Refunded to buyers" value={money(stats?.total_refunded || 0)} note={`${stats?.refunds_issued ?? 0} completed refunds`} icon={<WalletCards size={18} />} tint="blue" trend="All time" />
-      <Metric label="Estimated savings" value={money(stats?.estimated_savings || 0)} note="Versus a full return" icon={<TrendingDown size={18} />} tint="orange" trend={`${stats?.estimated_returns_avoided ?? 0} returns avoided`} />
+      <Metric label="Estimated savings" value={money(stats?.estimated_savings || 0)} note="Versus a full physical return" icon={<TrendingDown size={18} />} tint="orange" trend={`${stats?.estimated_returns_avoided ?? 0} returns avoided`} />
     </div>
     <section className="section-block">
-      <div className="section-head"><div><div className="section-title">Needs your attention <span className="count-bubble">{pending.length + unprocessed.length}</span></div><p>Live price changes and agent recommendations, all in one place.</p></div><Link to="/price-drops" className="text-link">See all activity <ArrowRight size={15} /></Link></div>
+      <div className="section-head"><div><div className="section-title">Needs your attention <span className="count-bubble">{(stats?.recommendations_pending ?? 0) + unprocessed.length}</span></div><p>Customer disputes, live price changes, and AI case reports in one place.</p></div><Link to="/claims" className="text-link">See all claims <ArrowRight size={15} /></Link></div>
       <div className="attention-grid">
-        <div className="attention-card"><div className="attention-top"><div className="attention-symbol symbol-mint"><TrendingDown size={17} /></div><span className="status-tag status-waiting">PRICE CHANGE</span></div><h3>{unprocessed.length ? `${unprocessed.length} price change${unprocessed.length > 1 ? 's' : ''} need processing` : 'Keep an eye on the catalog'}</h3><p>{unprocessed.length ? 'Match eligible buyers and calculate savings before reviewing refund actions.' : 'Run a Channel3 check to look for a lower live offer across retailers.'}</p><Link to="/price-drops" className="card-link">Review price changes <ArrowRight size={15} /></Link></div>
-        <div className="attention-card"><div className="attention-top"><div className="attention-symbol symbol-lilac"><Sparkles size={17} /></div><span className="status-tag status-review">AGENT REVIEW</span></div><h3>{pending.length ? `${pending.length} refund recommendation${pending.length > 1 ? 's' : ''} ready` : 'No decisions waiting'}</h3><p>{pending.length ? 'See the return risk, refund amount, and estimated savings for each buyer.' : 'When a price drop is processed, eligible recommendations appear here for approval.'}</p><Link to="/agent" className="card-link">Open agent review <ArrowRight size={15} /></Link></div>
+        <div className="attention-card"><div className="attention-top"><div className="attention-symbol symbol-mint"><TrendingDown size={17} /></div><span className="status-tag status-waiting">PRICE CHANGE</span></div><h3>{unprocessed.length ? `${unprocessed.length} price change${unprocessed.length > 1 ? 's' : ''} need processing` : 'Catalog prices monitored'}</h3><p>{unprocessed.length ? 'Match eligible buyers and calculate savings before reviewing refund actions.' : 'Run a Channel3 check to look for lower live offers across retailers.'}</p><Link to="/price-drops" className="card-link">Review price changes <ArrowRight size={15} /></Link></div>
+        <div className="attention-card"><div className="attention-top"><div className="attention-symbol symbol-lilac"><Sparkles size={17} /></div><span className="status-tag status-review">CLAIMS & DISPUTES</span></div><h3>{(stats?.recommendations_pending ?? 0) > 0 ? `${stats?.recommendations_pending} claim${(stats?.recommendations_pending ?? 0) > 1 ? 's' : ''} ready` : 'No claims waiting'}</h3><p>Inspect AI return-risk analysis, Channel3 competitor proof, and drafted resolution messages.</p><Link to="/claims" className="card-link">Open claims console <ArrowRight size={15} /></Link></div>
       </div>
     </section>
     <section className="section-block overview-lower">
@@ -306,7 +342,7 @@ function PriceDropsPage({ toast }: { toast: (value: Toast) => void }) {
   async function process(drop: PriceDrop) {
     setRunning(drop.id)
     try {
-      const result = await api<Decision[]>(`/price-drops/${drop.id}/process`, { method: 'POST' })
+      const result = await api<any[]>(`/price-drops/${drop.id}/process`, { method: 'POST' })
       const recommendations = result.filter(row => row.decision === 'REFUND').length
       toast({ kind: 'success', message: `${result.length} order${result.length === 1 ? '' : 's'} evaluated; ${recommendations} refund recommendation${recommendations === 1 ? '' : 's'} created.` })
       await refresh()
@@ -320,239 +356,6 @@ function PriceDropsPage({ toast }: { toast: (value: Toast) => void }) {
   </>
 }
 
-function DecisionsPage({ toast }: { toast: (value: Toast) => void }) {
-  const { decisions, refresh } = useWorkspaceData()
-  const [working, setWorking] = useState('')
-  const [quick, setQuick] = useState('')
-  const [inspecting, setInspecting] = useState<Decision | null>(null)
-  async function action(row: Decision, kind: 'approve' | 'reject') {
-    setWorking(row.id)
-    try {
-      const response = await api<{ can_execute: boolean; sample_order: boolean }>(`/agent/decisions/${row.id}/${kind}`, { method: 'POST' })
-      if (kind === 'approve' && response.can_execute) {
-        const result = await api<{ status: string; refund_id: string; amount: number }>(`/refunds/${row.id}/execute`, { method: 'POST' })
-        toast({ kind: 'success', message: `PayPal refund ${result.status.toLowerCase()}: ${money(result.amount)}.` })
-      } else if (kind === 'approve' && response.sample_order) {
-        toast({ kind: 'info', message: 'Sample recommendation approved for review. Sample orders cannot issue a PayPal refund.' })
-      } else toast({ kind: 'success', message: kind === 'approve' ? 'Recommendation approved.' : 'Recommendation rejected.' })
-      await refresh()
-    } catch (error) { toast({ kind: 'error', message: error instanceof Error ? error.message : 'Action failed.' }); await refresh() }
-    finally { setWorking('') }
-  }
-  const columns = useMemo<ColDef<Decision>[]>(() => [
-    { field: 'paypal_order_id', headerName: 'ORDER / BUYER', flex: 1.1, minWidth: 155, cellRenderer: (p: { data: Decision }) => <div className="grid-buyer"><b>{p.data.buyer_name || 'Sample buyer'}</b><span>{p.data.paypal_order_id ? `#${p.data.paypal_order_id.slice(-8)}` : `#${p.data.order_id.slice(0, 8)}`}</span></div> },
-    { field: 'product_name', headerName: 'PRODUCT', flex: 1.2, minWidth: 155 },
-    { field: 'refund_amount', headerName: 'REFUND', flex: 0.8, minWidth: 95, valueFormatter: p => money(p.value, p.data?.currency) },
-    { field: 'return_probability', headerName: 'RETURN RISK', flex: 1.1, minWidth: 135, cellRenderer: (p: { value: number }) => <RiskBar probability={p.value || 0} /> },
-    { field: 'estimated_savings', headerName: 'NET SAVINGS', flex: 0.8, minWidth: 105, valueFormatter: p => money(p.value, p.data?.currency), cellClass: 'savings-cell' },
-    {
-      field: 'reasoning',
-      headerName: 'AI REASONING & ANALYSIS',
-      flex: 2.1,
-      minWidth: 260,
-      cellRenderer: (p: { data: Decision }) => {
-        const isAi = p.data?.analysis_report?.provider === 'openai' || p.data?.analysis_report?.provider === 'gemini'
-        return (
-          <div className="grid-reasoning-cell">
-            <div className="grid-reasoning-top">
-              <span className={`ai-badge-sm ${isAi ? 'ai-live' : 'ai-rules'}`}>
-                <Brain size={11} /> {isAi ? 'OpenAI gpt-4.1-mini' : 'Actuarial Engine'}
-              </span>
-              <button type="button" className="inspect-link" onClick={() => setInspecting(p.data)} title="View complete AI return risk report">
-                <FileText size={11} /> Inspect Report
-              </button>
-            </div>
-            <p className="grid-reasoning-text" title={p.data?.reasoning}>{p.data?.reasoning}</p>
-          </div>
-        )
-      },
-    },
-    { field: 'status', headerName: 'STATUS', flex: 0.9, minWidth: 120, cellRenderer: (p: { value: string }) => <span className={`decision-status ${p.value.toLowerCase().replace('_', '-')}`}>{p.value.replace('_', ' ')}</span> },
-    { headerName: 'ACTION', flex: 1.2, minWidth: 185, sortable: false, cellRenderer: (p: { data: Decision }) => p.data.status === 'PENDING_REVIEW' ? <div className="grid-actions"><button className="approve-button" disabled={working === p.data.id} onClick={() => action(p.data, 'approve')}><Check size={14} /> Approve</button><button className="reject-button" disabled={working === p.data.id} onClick={() => action(p.data, 'reject')}>Reject</button></div> : p.data.status === 'APPROVED' && p.data.can_execute ? <span className="decision-status approved">APPROVED · SENT</span> : <span className="grid-muted">{p.data.status === 'SKIPPED' ? 'Policy skip' : p.data.status}</span> },
-  ], [working])
-  const awaiting = decisions.filter(row => row.status === 'PENDING_REVIEW')
-  const finished = decisions.filter(row => row.status !== 'PENDING_REVIEW')
-  return <>
-    <PageHeading eyebrow="HUMAN-IN-THE-LOOP" title="Agent review" description="Inspect AI reasoning, return likelihood drivers, and projected net savings before approving refunds." right={<button className="button button-light" onClick={() => void refresh()}><RefreshCw size={15} /> Refresh decisions</button>} />
-    <div className="review-banner"><div className="review-banner-icon"><LockKeyhole size={18} /></div><div><b>You’re in control of every refund.</b><span>Recommendations can be approved or rejected here. Only captured PayPal sandbox orders can produce a payment action.</span></div><div className="review-banner-count"><b>{awaiting.length}</b><span>awaiting you</span></div></div>
-    <section className="section-block grid-section"><div className="section-head"><div><div className="section-title">Awaiting review <span className="count-bubble">{awaiting.length}</span></div><p>Deterministic policy checks combined with OpenAI return-likelihood scoring.</p></div><div className="grid-tools"><div className="search-field"><Search size={15} /><input value={quick} placeholder="Search recommendations" onChange={event => setQuick(event.target.value)} /></div></div></div>
-      {awaiting.length ? <div className="table-frame"><div className="ag-theme-quartz grid-wrap decision-grid"><Suspense fallback={<div className="grid-loading">Preparing review table…</div>}><GridTable rowData={awaiting} columnDefs={columns} quickFilterText={quick} pagination paginationPageSize={10} /></Suspense></div></div> : <EmptyState compact icon={<Sparkles size={18} />} title="Nothing to review right now" copy="Process a Channel3 price drop to find eligible orders and create agent recommendations." action={<Link className="button button-light small-button" to="/price-drops">Open price drops <ArrowRight size={14} /></Link>} />}
-    </section>
-    {finished.length > 0 && <section className="section-block grid-section"><div className="section-head"><div><div className="section-title">Decision history</div><p>Approved, rejected, and policy-skipped recommendations.</p></div></div><div className="table-frame"><div className="ag-theme-quartz grid-wrap"><Suspense fallback={<div className="grid-loading">Preparing history table…</div>}><GridTable rowData={finished} columnDefs={columns} pagination paginationPageSize={10} /></Suspense></div></div></section>}
-    {inspecting && <DecisionAnalysisModal decision={inspecting} onClose={() => setInspecting(null)} onAction={action} working={working} />}
-  </>
-}
-
-function DecisionAnalysisModal({
-  decision,
-  onClose,
-  onAction,
-  working,
-}: {
-  decision: Decision | null
-  onClose: () => void
-  onAction: (row: Decision, kind: 'approve' | 'reject') => Promise<void>
-  working: string
-}) {
-  if (!decision) return null
-  const report = decision.analysis_report
-  const probPercent = Math.round((decision.return_probability || 0) * 100)
-  const isAi = report?.provider === 'openai' || report?.provider === 'gemini'
-  const providerLabel = report?.provider === 'openai'
-    ? 'OpenAI (gpt-4.1-mini)'
-    : report?.provider === 'gemini'
-    ? 'Google Gemini 2.0'
-    : 'Actuarial Deterministic Engine'
-
-  const fin = report?.financial_breakdown
-  const returnCost = fin?.estimated_return_cost ?? decision.estimated_return_cost
-  const refundAmt = fin?.proposed_refund ?? decision.refund_amount
-  const netSavings = fin?.net_savings ?? decision.estimated_savings
-
-  return (
-    <div className="analysis-modal-overlay" onClick={onClose}>
-      <div className="analysis-modal" onClick={e => e.stopPropagation()}>
-        <div className="analysis-modal-header">
-          <div>
-            <div className="modal-eyebrow">
-              <span className={`ai-badge ${isAi ? 'ai-live' : 'ai-rules'}`}>
-                <Brain size={13} /> {providerLabel}
-              </span>
-              <span className={`decision-status ${decision.status.toLowerCase().replace('_', '-')}`}>
-                {decision.status.replace('_', ' ')}
-              </span>
-            </div>
-            <h2>AI Return-Risk & Price Protection Report</h2>
-            <p className="modal-sub">
-              Product: <b>{decision.product_name}</b> (SKU: {decision.sku}) · Buyer: <b>{decision.buyer_name || 'Buyer'}</b>
-            </p>
-          </div>
-          <button type="button" className="icon-button" onClick={onClose} aria-label="Close modal">
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="analysis-modal-body">
-          <div className="modal-metrics-grid">
-            <div className="modal-metric-card">
-              <span className="card-label">RETURN PROBABILITY</span>
-              <div className="metric-score">
-                <span className="score-num">{probPercent}%</span>
-                <span className={`risk-pill risk-${(report?.risk_level || 'HIGH').toLowerCase()}`}>
-                  {report?.risk_level || 'HIGH'} RISK
-                </span>
-              </div>
-              <div className="modal-risk-bar"><i style={{ width: `${probPercent}%` }} /></div>
-              <span className="card-hint">Confidence: <b>{report?.confidence || 'HIGH'}</b></span>
-            </div>
-
-            <div className="modal-metric-card">
-              <span className="card-label">PROPOSED PARTIAL REFUND</span>
-              <div className="metric-score">
-                <span className="score-num refund-num">{money(refundAmt, decision.currency)}</span>
-              </div>
-              <span className="card-hint">Credited via PayPal Orders v2 capture refund</span>
-            </div>
-
-            <div className="modal-metric-card highlight-card">
-              <span className="card-label">MERCHANT MARGIN PROTECTED</span>
-              <div className="metric-score">
-                <span className="score-num savings-num">+{money(netSavings, decision.currency)}</span>
-              </div>
-              <span className="card-hint">Net saved compared to physical return logistics</span>
-            </div>
-          </div>
-
-          <div className="modal-section">
-            <h3><WalletCards size={16} /> Cost of Return vs Proactive Refund Analysis</h3>
-            <div className="financial-comparison-grid">
-              <div className="fin-col return-col">
-                <div className="fin-col-title">COST OF FULL PHYSICAL RETURN</div>
-                <div className="fin-row"><span>Estimated Roundtrip Shipping</span><b>$24.00</b></div>
-                <div className="fin-row"><span>Restocking & Inspection Fee (15%)</span><b>${((decision.purchase_price || 0) * 0.15).toFixed(2)}</b></div>
-                <div className="fin-row"><span>Open-Box Resale Loss (25%)</span><b>${((decision.purchase_price || 0) * 0.25).toFixed(2)}</b></div>
-                <div className="fin-total-row"><span>Total Cost of Physical Return</span><b>{money(returnCost, decision.currency)}</b></div>
-              </div>
-
-              <div className="fin-col refund-col">
-                <div className="fin-col-title">PROACTIVE PARTIAL PRICE PROTECTION</div>
-                <div className="fin-row"><span>Direct Price Delta Refund</span><b>{money(refundAmt, decision.currency)}</b></div>
-                <div className="fin-row"><span>Customer Keeps Item (No Freight)</span><b>$0.00 Freight</b></div>
-                <div className="fin-row"><span>No Warehouse Restocking</span><b>$0.00 Restock</b></div>
-                <div className="fin-total-row highlight-row"><span>Net Margin Protected</span><b>+{money(netSavings, decision.currency)}</b></div>
-              </div>
-            </div>
-          </div>
-
-          <div className="modal-section">
-            <h3><Activity size={16} /> Key Behavioral Drivers & Risk Indicators</h3>
-            <ul className="modal-driver-list">
-              {(report?.key_drivers && report.key_drivers.length > 0 ? report.key_drivers : [
-                'Order is within the active price-protection and return window.',
-                'Substantial competitor price drop creates strong incentive to return and re-buy.',
-                'Proactive refund avoids reverse shipping and open-box markdown losses.',
-              ]).map((driver, idx) => (
-                <li key={idx}><span className="driver-bullet" /><span>{driver}</span></li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="modal-section narrative-section">
-            <h3><Brain size={16} /> AI Executive Summary</h3>
-            <blockquote className="modal-quote">
-              <p>{decision.reasoning}</p>
-            </blockquote>
-            {report?.retention_impact && (
-              <div className="retention-callout">
-                <ShieldCheck size={16} />
-                <div>
-                  <b>Customer Retention Impact: </b>
-                  <span>{report.retention_impact}</span>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="analysis-modal-footer">
-          <div className="footer-note">
-            <LockKeyhole size={14} />
-            <span>Human-in-the-loop: DropBack never auto-charges or auto-refunds. Merchant approval is mandatory.</span>
-          </div>
-          <div className="footer-actions">
-            <button type="button" className="button button-light" onClick={onClose}>Close</button>
-            {decision.status === 'PENDING_REVIEW' && (
-              <>
-                <button
-                  type="button"
-                  className="reject-button button"
-                  disabled={working === decision.id}
-                  onClick={async () => { await onAction(decision, 'reject'); onClose() }}
-                >
-                  Reject
-                </button>
-                <button
-                  type="button"
-                  className="approve-button button"
-                  disabled={working === decision.id}
-                  onClick={async () => { await onAction(decision, 'approve'); onClose() }}
-                >
-                  <Check size={15} /> Approve & Issue Refund
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function RiskBar({ probability }: { probability: number }) {
-  const percent = Math.round(probability * 100)
-  return <div className="risk-bar-wrap"><div className="risk-bar"><i style={{ width: `${percent}%` }} /></div><span>{percent}%</span></div>
-}
-
 function OrdersPage() {
   const { orders, loading, refresh } = useWorkspaceData()
   const [quick, setQuick] = useState('')
@@ -562,7 +365,7 @@ function OrdersPage() {
     { headerName: 'PROTECTION', flex: 0.9, minWidth: 120, cellRenderer: (p: { data: Order }) => <span className={`order-status ${p.data.refundable ? 'complete' : 'pending'}`}><i />{p.data.refundable ? 'Refundable' : 'Sample only'}</span> },
   ], [])
   return <><PageHeading eyebrow="CUSTOMER ACTIVITY" title="Orders" description="Captured orders with their original purchase prices and protection status." right={<button className="button button-light" onClick={() => void refresh()}><RefreshCw size={15} /> Refresh</button>} />
-    <div className="orders-summary"><div><span>ALL ORDERS</span><b>{orders.length}</b></div><div><span>IN PROTECTION WINDOW</span><b>{orders.filter(order => order.captured_at && (Date.now() - new Date(order.captured_at).getTime()) < 14 * 86400000).length}</b></div><div><span>PAYPAL CAPTURES</span><b>{orders.filter(order => order.refundable).length}</b></div><div className="summary-help"><ShieldCheck size={17} /><span>Sample orders help you explore the workflow. They can’t be refunded.</span></div></div>
+    <div className="orders-summary"><div><span>ALL ORDERS</span><b>{orders.length}</b></div><div><span>IN PROTECTION WINDOW</span><b>{orders.filter(order => order.captured_at && (Date.now() - new Date(order.captured_at).getTime()) < 14 * 86400000).length}</b></div><div><span>PAYPAL CAPTURES</span><b>{orders.filter(order => order.refundable).length}</b></div><div className="summary-help"><ShieldCheck size={17} /><span>Sample orders help you explore the workflow. Real PayPal captures are refundable with merchant approval.</span></div></div>
     <div className="section-head orders-head"><div><div className="section-title">Order history</div><p>{loading ? 'Refreshing…' : 'Search captured orders and inspect buyer protection status.'}</p></div><div className="search-field"><Search size={15} /><input placeholder="Search orders" value={quick} onChange={e => setQuick(e.target.value)} /></div></div>
     <div className="table-frame"><div className="ag-theme-quartz grid-wrap order-grid"><Suspense fallback={<div className="grid-loading">Preparing order table…</div>}><GridTable rowData={orders} columnDefs={columns} quickFilterText={quick} pagination paginationPageSize={12} /></Suspense></div></div>
   </>
@@ -590,9 +393,9 @@ function SettingsPage({ toast }: { toast: (value: Toast) => void }) {
   return <><PageHeading eyebrow="PREFERENCES & CONNECTIONS" title="Settings" description="Set your protection policy and see which services are connected." />
     <div className="settings-layout"><div className="settings-main"><form onSubmit={save}>
       <section className="settings-card"><div className="settings-card-head"><div className="settings-icon"><Settings2 size={18} /></div><div><h2>Protection policy</h2><p>Set the guardrails the agent uses for every recommendation.</p></div></div><div className="settings-fields"><label>Merchant display name<input value={values.merchant_name || ''} onChange={e => field('merchant_name', e.target.value)} /></label><label>Price protection window <span className="input-suffix"><input type="number" min="1" max="90" value={values.price_protection_window_days || 14} onChange={e => field('price_protection_window_days', Number(e.target.value))} /><i>days</i></span></label><label>Maximum refund per order <span className="input-prefix"><i>$</i><input type="number" min="1" step="0.01" value={values.max_refund_per_order || 100} onChange={e => field('max_refund_per_order', Number(e.target.value))} /></span></label><label>Daily refund budget <span className="input-prefix"><i>$</i><input type="number" min="1" step="0.01" value={values.daily_refund_budget || 500} onChange={e => field('daily_refund_budget', Number(e.target.value))} /></span></label><label>Minimum price drop <span className="input-prefix"><i>$</i><input type="number" min="0" step="0.01" value={values.min_price_drop_amount || 5} onChange={e => field('min_price_drop_amount', Number(e.target.value))} /></span></label><label>Minimum percentage drop <span className="input-suffix"><input type="number" min="0" max="100" step="0.1" value={values.min_price_drop_percentage || 5} onChange={e => field('min_price_drop_percentage', Number(e.target.value))} /><i>%</i></span></label></div></section>
-      <section className="settings-card"><div className="settings-card-head"><div className="settings-icon pale-orange"><RotateCcw size={18} /></div><div><h2>Return cost estimate</h2><p>Used to compare an early refund with a full return.</p></div></div><div className="settings-fields"><label>Shipping per leg <span className="input-prefix"><i>$</i><input type="number" min="0" step="0.01" value={values.return_shipping_cost || 12} onChange={e => field('return_shipping_cost', Number(e.target.value))} /></span></label><label>Restocking loss <span className="input-suffix"><input type="number" min="0" max="100" step="0.1" value={values.restocking_fee_percentage || 15} onChange={e => field('restocking_fee_percentage', Number(e.target.value))} /><i>%</i></span></label><label>Open-box discount <span className="input-suffix"><input type="number" min="0" max="100" step="0.1" value={values.open_box_discount_percentage || 25} onChange={e => field('open_box_discount_percentage', Number(e.target.value))} /><i>%</i></span></label></div></section>
+      <section className="settings-card"><div className="settings-card-head"><div className="settings-icon pale-orange"><RotateCcw size={18} /></div><div><h2>Return cost estimate</h2><p>Used to compare an early refund with a physical box return.</p></div></div><div className="settings-fields"><label>Shipping per leg <span className="input-prefix"><i>$</i><input type="number" min="0" step="0.01" value={values.return_shipping_cost || 12} onChange={e => field('return_shipping_cost', Number(e.target.value))} /></span></label><label>Restocking loss <span className="input-suffix"><input type="number" min="0" max="100" step="0.1" value={values.restocking_fee_percentage || 15} onChange={e => field('restocking_fee_percentage', Number(e.target.value))} /><i>%</i></span></label><label>Open-box discount <span className="input-suffix"><input type="number" min="0" max="100" step="0.1" value={values.open_box_discount_percentage || 25} onChange={e => field('open_box_discount_percentage', Number(e.target.value))} /><i>%</i></span></label></div></section>
       <div className="settings-save"><span><LockKeyhole size={14} /> Every refund still needs your approval.</span><button className="button button-dark" disabled={saving || loading}>{saving ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />}{saving ? 'Saving…' : 'Save settings'}</button></div>
-    </form></div><aside className="settings-side"><div className="settings-card connection-card"><div className="settings-card-head"><div className="settings-icon pale-green"><Activity size={18} /></div><div><h2>Connections</h2><p>Server-side service health</p></div></div><ServiceStatus name="Channel3" detail="Required live product matching & price monitoring" connected={!!health?.channel3_configured} critical /><ServiceStatus name="PayPal" detail={`${health?.paypal_environment || 'Sandbox'} checkout, capture & refunds`} connected={!!health?.paypal_configured} /><div className="setup-note"><b>{health?.channel3_configured ? 'Channel3 API connected' : 'Channel3 is required'}</b><p>{health?.channel3_configured ? health.channel3_webhook_configured ? 'Live price checks and signed webhook verification are configured.' : <>Live price checks and product subscriptions are active. To receive ongoing price-change events, set <code>CHANNEL3_WEBHOOK_SECRET</code> and register the public HTTPS endpoint shown in the README.</> : <>Live price checks require <code>CHANNEL3_API_KEY</code> on the backend. Configure it and restart the API.</>}</p></div><div className="setup-note setup-note-blue"><b>PayPal checkout testing</b><p>Sign in to the checkout popup with a Personal sandbox account from PayPal Developer Dashboard → Sandbox → Accounts.</p></div></div><div className="settings-card scoring-card"><div className="settings-card-head"><div className="settings-icon pale-purple"><Sparkles size={18} /></div><div><h2>Agent scoring</h2><p>Decision support, not autonomous payment.</p></div></div><div className="scoring-row"><span>Model assisted</span><b>When API is configured</b></div><div className="scoring-row"><span>Policy authority</span><b>Deterministic rules</b></div><div className="scoring-row"><span>Auto-refunds</span><b className="disabled-label">Disabled</b></div></div></aside></div>
+    </form></div><aside className="settings-side"><div className="settings-card connection-card"><div className="settings-card-head"><div className="settings-icon pale-green"><Activity size={18} /></div><div><h2>Connections</h2><p>Server-side service health</p></div></div><ServiceStatus name="Channel3" detail="Required live product matching & price monitoring" connected={!!health?.channel3_configured} critical /><ServiceStatus name="PayPal" detail={`${health?.paypal_environment || 'Sandbox'} checkout, capture & refunds`} connected={!!health?.paypal_configured} /><div className="setup-note"><b>{health?.channel3_configured ? 'Channel3 API connected' : 'Channel3 is required'}</b><p>{health?.channel3_configured ? health.channel3_webhook_configured ? 'Live price checks and signed webhook verification are configured.' : <>Live price checks and product subscriptions are active. To receive ongoing price-change events, set <code>CHANNEL3_WEBHOOK_SECRET</code> and register the public HTTPS endpoint shown in the README.</> : <>Live price checks require <code>CHANNEL3_API_KEY</code> on the backend. Configure it and restart the API.</>}</p></div><div className="setup-note setup-note-blue"><b>PayPal checkout testing</b><p>Sign in to the checkout popup with a Personal sandbox account from PayPal Developer Dashboard → Sandbox → Accounts.</p></div></div><div className="settings-card scoring-card"><div className="settings-card-head"><div className="settings-icon pale-purple"><Sparkles size={18} /></div><div><h2>Agent scoring</h2><p>Decision support, not autonomous payment.</p></div></div><div className="scoring-row"><span>Model assisted</span><b>OpenAI gpt-4.1-mini / Gemini</b></div><div className="scoring-row"><span>Policy authority</span><b>Deterministic rules</b></div><div className="scoring-row"><span>Auto-refunds</span><b className="disabled-label">Disabled</b></div></div></aside></div>
   </>
 }
 
@@ -685,13 +488,23 @@ function Storefront({ publicMode = false, toast }: { publicMode?: boolean; toast
     return () => button.removeEventListener('click', click)
   }, [payReady, cart, totalCount])
 
-  return <div className="store-page">
-    <header className="store-header"><Link to={publicMode ? '/login' : '/'} className="store-brand"><BrandMark /><span>HOLLOWAY<small>GOODS FOR GOOD DAYS</small></span></Link><div className="store-header-center">A little more considered.</div><div className="store-header-right"><span className="store-shipping">Complimentary shipping over $100</span><button className="cart-button" onClick={() => document.getElementById('store-cart')?.scrollIntoView({ behavior: 'smooth' })}><ShoppingBag size={17} /><b>{totalCount}</b></button></div></header>
-    <section className="store-hero"><div className="store-hero-copy"><span className="store-kicker"><span /> CAREFULLY CHOSEN, MADE TO LAST</span><h1>Good things,<br /><em>for everyday.</em></h1><p>Thoughtful pieces for a slower morning, a clearer commute, and everything in between.</p><a href="#catalog" className="button button-dark">Explore the collection <ArrowRight size={16} /></a><div className="store-trust"><ShieldCheck size={15} /> Covered by DropBack price protection for 14 days.</div></div><div className="store-hero-art"><div className="hero-sun" /><div className="hero-product"><span>☕</span><i /></div><div className="hero-caption"><b>01 / MORNING RITUAL</b><span>Made to be used every day</span></div><div className="hero-decoration decor-one" /><div className="hero-decoration decor-two" /></div></section>
-    <section id="catalog" className="store-catalog"><div className="store-section-title"><div><span>THE HOLLOWAY EDIT</span><h2>Made for the everyday</h2></div><span>03 OBJECTS <i /> CONSIDERED</span></div><div className="store-products">{products.map((product, i) => <article className="store-product" key={product.id}><div className={`store-product-art art-${i % 3}`}><span>{i === 0 ? '☕' : i === 1 ? '◉' : '▱'}</span><label>14-DAY PRICE COVER</label><button className="quick-add" onClick={() => setCart(current => ({ ...current, [product.id]: (current[product.id] || 0) + 1 }))}><Plus size={17} /></button></div><div className="store-product-detail"><div><span>{product.category.toUpperCase()}</span><h3>{product.name}</h3><p>{product.description}</p></div><strong>{money(product.current_price, product.currency)}</strong></div><button className="add-cart-button" onClick={() => setCart(current => ({ ...current, [product.id]: (current[product.id] || 0) + 1 }))}>{cart[product.id] ? <>Add another <span>· {cart[product.id]} in bag</span></> : <>Add to bag <Plus size={15} /></>}</button></article>)}</div></section>
-    <section className="store-protection"><div className="protection-mark"><ShieldCheck size={26} /></div><div><span>OUR LITTLE PROMISE</span><h2>We watch the price, so you don’t have to.</h2><p>If something you bought drops in price within 14 days, we’ll send back the difference. It’s the kind of thing we think should just happen.</p></div><div className="protection-stat"><b>14</b><span>DAYS OF<br />PRICE COVER</span></div></section>
-    <section className="store-checkout" id="store-cart"><div className="checkout-left"><span className="store-kicker">YOUR BAG <b>{totalCount.toString().padStart(2, '0')}</b></span><h2>Ready when you are.</h2><p>Take your good things home. We’ll keep watch on the price.</p>{totalCount > 0 ? <div className="cart-lines">{products.filter(product => cart[product.id]).map(product => <div className="cart-line" key={product.id}><span>{product.name} <i>× {cart[product.id]}</i></span><b>{money(product.current_price * cart[product.id], product.currency)}</b><button onClick={() => setCart(current => ({ ...current, [product.id]: Math.max(0, (current[product.id] || 0) - 1) }))} aria-label={`Remove one ${product.name}`}><X size={14} /></button></div>)}<div className="cart-total"><span>Total</span><b>{money(total)}</b></div></div> : <p className="cart-empty">Your bag is waiting for something good.</p>}</div><div className="checkout-right"><div className="checkout-total"><span>ORDER TOTAL</span><b>{money(total)}</b><small>Shipping and taxes calculated at checkout.</small></div><button ref={payButtonRef} className={`paypal-checkout-button ${!payReady || !eligible || !totalCount ? 'is-disabled' : ''}`} disabled={!payReady || !eligible || !totalCount} type="button"><span className="paypal-word">Pay<span>Pal</span></span><span>{checkingSdk ? 'Preparing secure checkout…' : eligible ? 'Continue with PayPal' : 'PayPal checkout unavailable'}</span><ArrowRight size={17} /></button>{!config?.configured && <div className="checkout-notice">Set PayPal sandbox credentials in the backend environment to enable live checkout.</div>}{paymentMessage && <div className="payment-message" role="status">{paymentMessage}</div>}<div className="checkout-lock"><LockKeyhole size={13} /> Encrypted PayPal Sandbox checkout</div></div></section>
-    <footer className="store-footer"><span>HOLLOWAY GOODS</span><span>Made with care. Covered by DropBack.</span><Link to={publicMode ? '/login' : '/'}>Merchant console <ArrowRight size={14} /></Link></footer>
+  return <div className="store-page" data-testid="store-page">
+    <div style={{ background: '#142723', color: '#a7f3d0', padding: '8px 7vw', fontSize: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <ShieldCheck size={14} color="#34d399" />
+        All purchases backed by DropBack 14-Day Price Drop Guarantee.
+      </span>
+      <Link to="/portal" style={{ color: '#fff', fontWeight: 700, textDecoration: 'underline', display: 'flex', alignItems: 'center', gap: 4 }}>
+        Check Order & Claim Price Match <ArrowRight size={13} />
+      </Link>
+    </div>
+
+    <header className="store-header"><Link to={publicMode ? '/login' : '/'} className="store-brand" data-testid="brand"><BrandMark /><span>HOLLOWAY<small>GOODS FOR GOOD DAYS</small></span></Link><div className="store-header-center">A little more considered.</div><div className="store-header-right"><span className="store-shipping">Complimentary shipping over $100</span><button className="cart-button" onClick={() => document.getElementById('store-cart')?.scrollIntoView({ behavior: 'smooth' })}><ShoppingBag size={17} /><b>{totalCount}</b></button></div></header>
+    <section className="store-hero"><div className="store-hero-copy"><span className="store-kicker"><span /> CAREFULLY CHOSEN, MADE TO LAST</span><h1>Good things,<br /><em>for everyday.</em></h1><p>Thoughtful pieces for a slower morning, a clearer commute, and everything in between.</p><a href="#catalog" className="button button-dark">Explore the collection <ArrowRight size={16} /></a><Link to="/portal" className="store-trust" style={{ textDecoration: 'none', color: 'inherit' }}><ShieldCheck size={15} /> Covered by DropBack price protection for 14 days. <u>Check guarantee →</u></Link></div><div className="store-hero-art"><div className="hero-sun" /><div className="hero-product"><span>☕</span><i /></div><div className="hero-caption"><b>01 / MORNING RITUAL</b><span>Made to be used every day</span></div><div className="hero-decoration decor-one" /><div className="hero-decoration decor-two" /></div></section>
+    <section id="catalog" className="store-catalog"><div className="store-section-title"><div><span>THE HOLLOWAY EDIT</span><h2>Made for the everyday</h2></div><span>VERIFIED CATALOG <i /> IN-STOCK</span></div><div className="store-products">{products.map((product, i) => <article className="store-product" key={product.id}><div className={`store-product-art art-${i % 3}`}><span>{i === 0 ? '☕' : i === 1 ? '◉' : '▱'}</span><label>14-DAY PRICE COVER</label><button className="quick-add" onClick={() => setCart(current => ({ ...current, [product.id]: (current[product.id] || 0) + 1 }))}><Plus size={17} /></button></div><div className="store-product-detail"><div><span>{product.category.toUpperCase()}</span><h3>{product.name}</h3><p>{product.description}</p></div><strong>{money(product.current_price, product.currency)}</strong></div><button className="add-cart-button" onClick={() => setCart(current => ({ ...current, [product.id]: (current[product.id] || 0) + 1 }))}>{cart[product.id] ? <>Add another <span>· {cart[product.id]} in bag</span></> : <>Add to bag <Plus size={15} /></>}</button></article>)}</div></section>
+    <section className="store-protection"><div className="protection-mark"><ShieldCheck size={26} /></div><div><span>OUR LITTLE PROMISE</span><h2>We watch the price, so you don’t have to.</h2><p>If something you bought drops in price within 14 days, we’ll credit you the difference via PayPal so you don't have to return the box.</p></div><div className="protection-stat"><b>14</b><span>DAYS OF<br />PRICE COVER</span></div></section>
+    <section className="store-checkout" id="store-cart"><div className="checkout-left"><span className="store-kicker">YOUR BAG <b>{totalCount.toString().padStart(2, '0')}</b></span><h2>Ready when you are.</h2><p>Take your good things home. We’ll keep watch on the price.</p>{totalCount > 0 ? <div className="cart-lines">{products.filter(product => cart[product.id]).map(product => <div className="cart-line" key={product.id}><span>{product.name} <i>× {cart[product.id]}</i></span><b>{money(product.current_price * cart[product.id], product.currency)}</b><button onClick={() => setCart(current => ({ ...current, [product.id]: Math.max(0, (current[product.id] || 0) - 1) }))} aria-label={`Remove one ${product.name}`}><X size={14} /></button></div>)}<div className="cart-total"><span>Total</span><b>{money(total)}</b></div></div> : <p className="cart-empty">Your bag is waiting for something good.</p>}</div><div className="checkout-right"><div className="checkout-total"><span>ORDER TOTAL</span><b>{money(total)}</b><small>Shipping and taxes calculated at checkout.</small></div><button ref={payButtonRef} data-testid="paypal-checkout-btn" className={`paypal-checkout-button ${!payReady || !eligible || !totalCount ? 'is-disabled' : ''}`} disabled={!payReady || !eligible || !totalCount} type="button"><span className="paypal-word">Pay<span>Pal</span></span><span>{checkingSdk ? 'Preparing secure checkout…' : eligible ? 'Continue with PayPal' : 'PayPal checkout unavailable'}</span><ArrowRight size={17} /></button>{!config?.configured && <div className="checkout-notice">Set PayPal sandbox credentials in the backend environment to enable live checkout.</div>}{paymentMessage && <div className="payment-message" role="status">{paymentMessage}</div>}<div className="checkout-lock"><LockKeyhole size={13} /> Encrypted PayPal Sandbox checkout</div></div></section>
+    <footer className="store-footer"><span>HOLLOWAY GOODS</span><span>Made with care. Covered by DropBack.</span><div style={{ display: 'flex', gap: 16, alignItems: 'center' }}><Link to="/portal">14-Day Guarantee Portal <ArrowRight size={14} /></Link><Link to={publicMode ? '/login' : '/'}>Merchant console <ArrowRight size={14} /></Link></div></footer>
   </div>
 }
 

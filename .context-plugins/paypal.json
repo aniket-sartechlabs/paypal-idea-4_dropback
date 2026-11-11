@@ -1,0 +1,239 @@
+{
+  "$schema": "https://apimatic.io/schemas/context-plugins/v2.json",
+  "name": "paypal",
+  "version": "2026.04.1",
+  "provider": "apimatic",
+  "description": "APIMatic Context Plugin for PayPal Server APIs — grounding AI agents with verified OpenAPI 3.0.3 schemas for Orders v2, Payments v2 Captures and Refunds. Prevents LLM hallucination of deprecated v1 endpoints.",
+  "docs": "https://paypalaihackathon.devpost.com/details/apimatic",
+  "apimatic_sdk": "paypal-server-sdk",
+  "language": "python",
+  "environment": "sandbox",
+  "base_url": "https://api-m.sandbox.paypal.com",
+  "auth": {
+    "type": "oauth2_client_credentials",
+    "token_url": "/v1/oauth2/token",
+    "scopes": ["openid", "https://uri.paypal.com/services/payments/realtimepayment"]
+  },
+  "openapi_spec": {
+    "openapi": "3.0.3",
+    "info": {
+      "title": "PayPal Server APIs — Orders v2 & Payments v2",
+      "version": "2.4.1",
+      "description": "Authoritative PayPal REST API schemas as validated by APIMatic Context Plugin. Use these contracts to prevent AI hallucination of deprecated v1 endpoints."
+    },
+    "paths": {
+      "/v2/checkout/orders": {
+        "post": {
+          "operationId": "orders_create",
+          "summary": "Create Order",
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["intent", "purchase_units"],
+                  "properties": {
+                    "intent": { "type": "string", "enum": ["CAPTURE", "AUTHORIZE"] },
+                    "purchase_units": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "required": ["amount"],
+                        "properties": {
+                          "reference_id": { "type": "string" },
+                          "description": { "type": "string" },
+                          "amount": {
+                            "type": "object",
+                            "required": ["currency_code", "value"],
+                            "properties": {
+                              "currency_code": { "type": "string" },
+                              "value": { "type": "string" }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "payment_source": { "type": "object" }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "201": { "description": "Order created successfully" }
+          }
+        }
+      },
+      "/v2/checkout/orders/{id}/capture": {
+        "post": {
+          "operationId": "orders_capture",
+          "summary": "Capture Payment for Order",
+          "parameters": [
+            { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+            { "name": "PayPal-Request-Id", "in": "header", "required": true, "schema": { "type": "string" } }
+          ],
+          "responses": {
+            "201": { "description": "Payment captured successfully" }
+          }
+        }
+      },
+      "/v2/checkout/orders/{id}": {
+        "get": {
+          "operationId": "orders_get",
+          "summary": "Show Order Details",
+          "parameters": [
+            { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+          ],
+          "responses": {
+            "200": {
+              "description": "Order details",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "string" },
+                      "status": { "type": "string", "enum": ["CREATED", "SAVED", "APPROVED", "VOIDED", "COMPLETED", "PAYER_ACTION_REQUIRED"] },
+                      "intent": { "type": "string" },
+                      "purchase_units": { "type": "array" },
+                      "create_time": { "type": "string", "format": "date-time" },
+                      "links": { "type": "array" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/v2/payments/captures/{capture_id}": {
+        "get": {
+          "operationId": "captures_get",
+          "summary": "Show Captured Payment Details",
+          "parameters": [
+            { "name": "capture_id", "in": "path", "required": true, "schema": { "type": "string" } }
+          ],
+          "responses": {
+            "200": {
+              "description": "Capture details",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "string" },
+                      "status": { "type": "string", "enum": ["COMPLETED", "DECLINED", "PARTIALLY_REFUNDED", "PENDING", "REFUNDED", "FAILED"] },
+                      "amount": { "type": "object" },
+                      "final_capture": { "type": "boolean" },
+                      "seller_protection": { "type": "object" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "/v2/payments/captures/{capture_id}/refund": {
+        "post": {
+          "operationId": "captures_refund",
+          "summary": "Refund Captured Payment",
+          "description": "Refunds a captured payment, by ID. For a full refund, include an empty payload in the JSON request body. For a partial refund, include an amount object in the JSON request body.",
+          "parameters": [
+            { "name": "capture_id", "in": "path", "required": true, "schema": { "type": "string" } },
+            { "name": "PayPal-Request-Id", "in": "header", "required": true, "schema": { "type": "string" }, "description": "Idempotency key — prevents duplicate refunds" },
+            { "name": "Prefer", "in": "header", "schema": { "type": "string", "default": "return=minimal" } }
+          ],
+          "requestBody": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "amount": {
+                      "type": "object",
+                      "required": ["currency_code", "value"],
+                      "properties": {
+                        "currency_code": { "type": "string", "example": "USD" },
+                        "value": { "type": "string", "example": "10.00", "description": "String decimal, not float" }
+                      }
+                    },
+                    "note_to_payer": { "type": "string", "maxLength": 255 },
+                    "invoice_id": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "responses": {
+            "201": {
+              "description": "Refund created",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "string" },
+                      "status": { "type": "string", "enum": ["CANCELLED", "FAILED", "PENDING", "COMPLETED"] },
+                      "amount": { "type": "object" },
+                      "note_to_payer": { "type": "string" },
+                      "links": { "type": "array" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "mcp_tools": [
+    {
+      "name": "paypal_check_sandbox_health",
+      "description": "Verify PayPal Sandbox API connectivity, OAuth2 token freshness, and APIMatic contract validation status.",
+      "input_schema": { "type": "object", "properties": {}, "required": [] }
+    },
+    {
+      "name": "paypal_get_order_details",
+      "description": "Retrieve authoritative PayPal Sandbox Order details using APIMatic v2 schema (GET /v2/checkout/orders/{id}).",
+      "input_schema": {
+        "type": "object",
+        "properties": { "order_id": { "type": "string", "description": "PayPal Order ID" } },
+        "required": ["order_id"]
+      }
+    },
+    {
+      "name": "paypal_get_capture_status",
+      "description": "Check capture and settlement status for an order capture using APIMatic Payments v2 schema.",
+      "input_schema": {
+        "type": "object",
+        "properties": { "capture_id": { "type": "string" } },
+        "required": ["capture_id"]
+      }
+    },
+    {
+      "name": "paypal_issue_capture_refund",
+      "description": "Execute a partial or full refund on a PayPal capture using APIMatic idempotency headers and Payments v2 refund schema. Amount must be a decimal string.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "capture_id": { "type": "string" },
+          "amount": { "type": "number" },
+          "currency": { "type": "string", "default": "USD" },
+          "note_to_payer": { "type": "string", "maxLength": 255 }
+        },
+        "required": ["capture_id", "amount"]
+      }
+    }
+  ],
+  "antipatterns": [
+    "NEVER use /v1/payments/payment — this is deprecated. Use /v2/checkout/orders instead.",
+    "NEVER use /v1/payments/sale/{id}/refund — use /v2/payments/captures/{id}/refund.",
+    "Amount values must be strings ('10.00'), not floats (10.0) in PayPal v2 APIs.",
+    "Always include PayPal-Request-Id header for idempotency on capture and refund calls.",
+    "Sandbox base URL is https://api-m.sandbox.paypal.com, NOT https://api.paypal.com."
+  ]
+}

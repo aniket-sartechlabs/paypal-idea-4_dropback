@@ -46,6 +46,12 @@ _DISTINGUISHING_TOKENS = {
 }
 
 
+_MODEL_DISTINGUISHING_TOKENS = {
+    "air", "basic", "classic", "express", "lite", "max",
+    "mini", "plus", "pro", "se", "ultra", "standard",
+}
+
+
 def _match_score(product_name: str, sku: str, result: dict) -> float:
     title = _title(result)
     if not title:
@@ -54,19 +60,31 @@ def _match_score(product_name: str, sku: str, result: dict) -> float:
     if result_sku and sku.strip().lower() == result_sku.lower():
         return 1.0
 
-    wanted_tokens = set(_normalized(product_name).split())
-    candidate_tokens = set(_normalized(title).split())
+    norm_name = _normalized(product_name)
+    norm_title = _normalized(title)
+    if norm_name == norm_title:
+        return 1.0
+
+    wanted_tokens = set(norm_name.split())
+    candidate_tokens = set(norm_title.split())
     if not wanted_tokens or not candidate_tokens:
         return 0.0
-    wanted_variants = {token for token in wanted_tokens if token in _DISTINGUISHING_TOKENS or any(char.isdigit() for char in token)}
-    candidate_variants = {token for token in candidate_tokens if token in _DISTINGUISHING_TOKENS or any(char.isdigit() for char in token)}
-    # A title similarity score can hide a different model, color, size, or generation.
-    if wanted_variants != candidate_variants:
+
+    # Reject if distinguishing model variant tokens conflict (e.g., Pro vs Express, Plus vs Mini)
+    wanted_model_vars = {token for token in wanted_tokens if token in _MODEL_DISTINGUISHING_TOKENS}
+    candidate_model_vars = {token for token in candidate_tokens if token in _MODEL_DISTINGUISHING_TOKENS}
+    if wanted_model_vars and candidate_model_vars and wanted_model_vars != candidate_model_vars:
         return 0.0
-    coverage = len(wanted_tokens & candidate_tokens) / len(wanted_tokens)
-    if coverage < 0.75:
+
+    # Reject if explicit different model numbers exist (e.g., XM4 vs XM5)
+    digit_wanted = {token for token in wanted_tokens if any(char.isdigit() for char in token)}
+    digit_candidate = {token for token in candidate_tokens if any(char.isdigit() for char in token)}
+    if digit_wanted and digit_candidate and not (digit_wanted & digit_candidate):
         return 0.0
-    sequence_score = SequenceMatcher(None, _normalized(product_name), _normalized(title)).ratio()
+
+    overlap = len(wanted_tokens & candidate_tokens)
+    coverage = overlap / len(wanted_tokens)
+    sequence_score = SequenceMatcher(None, norm_name, norm_title).ratio()
     return round(0.7 * sequence_score + 0.3 * coverage, 3)
 
 
@@ -74,10 +92,50 @@ class Channel3Client:
     """Server-side Channel3 search adapter. No API key is ever sent to the browser."""
 
     base_url = "https://api.trychannel3.com"
-    min_match_confidence = 0.95
+    min_match_confidence = 0.75
 
     def matches_product(self, product_name: str, sku: str, candidate: str) -> bool:
         return _match_score(product_name, sku, {"title": candidate}) >= self.min_match_confidence
+
+    async def search_products(self, query: str, limit: int = 6, currency: str = "USD") -> list[dict]:
+        key = get_settings().channel3_api_key
+        if not key:
+            raise Channel3Error("Channel3 is required. Add CHANNEL3_API_KEY to .env.", 503)
+        headers = {"x-api-key": key, "Content-Type": "application/json", "Accept": "application/json"}
+        body = {"query": query, "limit": limit, "config": {"country": "US", "currency": currency}}
+        async with httpx.AsyncClient(timeout=20) as client:
+            try:
+                response = await client.post(f"{self.base_url}/v1/search", headers=headers, json=body)
+            except httpx.HTTPError as exc:
+                raise Channel3Error("Channel3 could not be reached.") from exc
+        if response.is_error:
+            raise Channel3Error(f"Channel3 search failed ({response.status_code}).", 502)
+        payload = response.json()
+        raw_items = payload.get("products") or payload.get("data") or payload.get("items") or []
+        items = []
+        for p in raw_items:
+            offers = p.get("offers") or []
+            valid_offers = []
+            for o in offers:
+                amt = _offer_price(o)
+                if amt:
+                    valid_offers.append({
+                        "price": round(amt, 2),
+                        "merchant": str(o.get("domain") or o.get("merchant") or "Retailer")[:100],
+                        "url": o.get("url"),
+                        "available": o.get("availability") not in {"out_of_stock", "unavailable", False},
+                        "condition": str(o.get("condition") or "new"),
+                    })
+            best = min(valid_offers, key=lambda x: x["price"]) if valid_offers else None
+            items.append({
+                "id": p.get("id"),
+                "title": _title(p),
+                "description": p.get("description", ""),
+                "category": p.get("category", "General"),
+                "best_offer": best,
+                "all_offers": valid_offers,
+            })
+        return items
 
     async def search_and_compare(self, product_name: str, sku: str, local_price: float, currency: str) -> dict:
         key = get_settings().channel3_api_key
@@ -116,11 +174,15 @@ class Channel3Client:
                 if amount is not None:
                     offer_currency = (offer.get("currency") or (offer.get("price") or {}).get("currency") if isinstance(offer.get("price"), dict) else offer.get("currency") or currency).upper()
                     if offer_currency == currency.upper():
+                        # Extract weight/dimensions if present
+                        weight_info = (offer.get("dimensions") or {}).get("weight") if isinstance(offer.get("dimensions"), dict) else None
                         priced.append({
                             "price": round(amount, 2),
                             "merchant": str(offer.get("domain") or offer.get("merchant") or offer.get("seller") or "Retailer")[:100],
+                            "url": offer.get("url"),
                             "available": offer.get("availability") not in {"out_of_stock", "unavailable", False},
                             "condition": str(offer.get("condition") or "new"),
+                            "weight": weight_info,
                         })
             if priced:
                 candidates.append((ratio, result, title, priced))
@@ -141,6 +203,7 @@ class Channel3Client:
             "match_confidence": round(match_score, 3),
             "offer_count": len(new_offers),
             "best_offer": best,
+            "all_offers": new_offers[:5],
             "local_price": round(local_price, 2),
             "currency": currency.upper(),
             "lower_than_current": best["price"] < local_price,

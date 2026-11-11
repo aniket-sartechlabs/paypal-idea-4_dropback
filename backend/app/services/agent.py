@@ -25,6 +25,23 @@ def deterministic_score(category: str, drop_percentage: float, days_since_purcha
     return max(0.05, min(0.9, risk)), "Rule-based actuarial model factoring competitor price delta, category return propensity, and days since purchase."
 
 
+def generate_customer_message(
+    buyer_name: str,
+    product_name: str,
+    refund_amount: float,
+    competitor_name: str = "authorized retailers",
+) -> str:
+    first_name = buyer_name.split()[0] if buyer_name and buyer_name != "Sample buyer" else "there"
+    retailer = competitor_name if competitor_name else "authorized retailers"
+    return (
+        f"Hi {first_name},\n\n"
+        f"We noticed the recent market price on your {product_name or 'purchase'} dropped by ${refund_amount:.2f} at {retailer}.\n\n"
+        f"Under your 14-Day DropBack Price Protection Guarantee, you never have to deal with returning boxes, packing tape, or waiting weeks for return processing. "
+        f"We've approved an instant ${refund_amount:.2f} refund credited directly back to your PayPal account so you keep the best price with zero hassle.\n\n"
+        f"Thank you for being our customer, and keep enjoying your purchase!"
+    )
+
+
 def build_rule_report(
     category: str,
     drop_percentage: float,
@@ -35,6 +52,9 @@ def build_rule_report(
     purchase_price: float = 0.0,
     refund_amount: float = 0.0,
     return_cost: float = 0.0,
+    buyer_name: str = "Buyer",
+    competitor_name: str = "",
+    customer_notes: str = "",
 ) -> dict[str, Any]:
     risk_level = "HIGH" if probability >= 0.55 else "MEDIUM" if probability >= 0.3 else "LOW"
     drivers = [
@@ -42,14 +62,18 @@ def build_rule_report(
         f"Price difference: {drop_percentage:.1f}% market price drop creates high return-and-repurchase incentive.",
         f"Category dynamics: '{category}' has elevated remorse sensitivity when competitor discounts appear.",
     ]
+    if customer_notes:
+        drivers.append(f"Customer claim: '{customer_notes[:100]}'")
     if savings > 0:
         drivers.append(f"Financial justification: Proactive ${refund_amount:.2f} refund saves an estimated ${savings:.2f} compared to return logistics.")
 
     reasoning = (
-        f"Rule-based analysis calculated a {probability * 100:.0f}% return likelihood for {product_name or category}. "
-        f"A proactive partial refund of ${refund_amount:.2f} avoids full return processing costs of ${return_cost:.2f}, "
+        f"Actuarial analysis calculated a {probability * 100:.0f}% return likelihood for {product_name or category}. "
+        f"Settling the ${refund_amount:.2f} price difference preempts ${return_cost:.2f} in return shipping & restocking waste, "
         f"protecting ${savings:.2f} in merchant gross margin."
     )
+
+    drafted_msg = generate_customer_message(buyer_name, product_name, refund_amount, competitor_name)
 
     return {
         "return_probability": round(probability, 3),
@@ -57,7 +81,8 @@ def build_rule_report(
         "risk_level": risk_level,
         "key_drivers": drivers,
         "reasoning": reasoning,
-        "retention_impact": "Proactively refunding the price delta removes customer dissatisfaction and preserves store loyalty.",
+        "drafted_customer_message": drafted_msg,
+        "retention_impact": "Resolving the price difference prevents item return, preserves the sale, and increases customer lifetime retention.",
         "recommended_action": "APPROVE_PARTIAL_REFUND" if savings > 0 else "SKIP",
         "provider": "rules",
         "model": "Actuarial Rule Engine v1",
@@ -82,6 +107,9 @@ async def explain_decision(
     purchase_price: float = 0.0,
     refund_amount: float = 0.0,
     return_cost: float = 0.0,
+    buyer_name: str = "Buyer",
+    competitor_name: str = "",
+    customer_notes: str = "",
 ) -> tuple[float, str, str, dict[str, Any]]:
     settings = get_settings()
     provider = settings.llm_provider.lower()
@@ -89,32 +117,36 @@ async def explain_decision(
     active_provider = "openai" if api_key and provider in {"openai", "auto"} else "gemini" if settings.gemini_api_key and provider == "gemini" else "rules"
 
     if active_provider == "rules":
-        report = build_rule_report(category, drop_percentage, days_since_purchase, probability, savings, product_name, purchase_price, refund_amount, return_cost)
+        report = build_rule_report(category, drop_percentage, days_since_purchase, probability, savings, product_name, purchase_price, refund_amount, return_cost, buyer_name, competitor_name, customer_notes)
         return probability, report["reasoning"], "rules", report
 
     system_prompt = (
         "You are DropBack AI, an advanced e-commerce actuarial engine analyzing return likelihood and customer churn risk. "
-        "A merchant is evaluating whether to issue a proactive partial refund to a buyer after a market/competitor price drop. "
+        "A merchant is evaluating whether to issue a price-match refund to a buyer after a competitor price drop to prevent a full return. "
         "Return ONLY valid JSON matching this schema:\n"
         "{\n"
         '  "return_probability": <float 0.0 to 1.0>,\n'
         '  "confidence": "HIGH" | "MEDIUM" | "LOW",\n'
         '  "risk_level": "HIGH" | "MEDIUM" | "LOW",\n'
         '  "key_drivers": [<3-4 concise string explanations of behavioral/financial drivers>],\n'
-        '  "reasoning": "<clear 2-sentence rationale summarizing why this probability was assigned and why a refund helps>",\n'
+        '  "reasoning": "<clear 2-sentence rationale summarizing why this probability was assigned and why settling helps>",\n'
+        '  "drafted_customer_message": "<warm, empathetic 2-3 paragraph message to the customer stating that we detected/approved the price drop under our DropBack Guarantee, credited the refund to their PayPal account, and they can keep their item without returning anything>",\n'
         '  "retention_impact": "<1-2 sentence statement on customer relationship and lifetime value impact>",\n'
         '  "recommended_action": "APPROVE_PARTIAL_REFUND" | "POLICY_SKIP"\n'
         "}"
     )
 
     user_prompt = (
+        f"Buyer Name: {buyer_name}\n"
         f"Product: {product_name or 'Retail Item'}\n"
         f"Category: {category}\n"
         f"Original Purchase Price: ${purchase_price:.2f}\n"
         f"Competitor Price Drop: {drop_percentage:.1f}%\n"
+        f"Competitor Retailer: {competitor_name or 'Authorized Retailer'}\n"
+        f"Customer Notes/Claim: {customer_notes or 'Price drop detected; considering return/dispute.'}\n"
         f"Days Elapsed Since Purchase: {days_since_purchase} days\n"
-        f"Proposed Proactive Refund Amount: ${refund_amount:.2f}\n"
-        f"Estimated Full Return Cost (Shipping + Restocking + Open-Box): ${return_cost:.2f}\n"
+        f"Proposed Price Match Refund: ${refund_amount:.2f}\n"
+        f"Estimated Full Return Cost (Freight + Restocking + Open-Box): ${return_cost:.2f}\n"
         f"Projected Merchant Net Savings if Preempted: ${savings:.2f}\n"
         f"Deterministic Actuarial Baseline Probability: {probability:.2f}\n"
     )
@@ -185,12 +217,15 @@ async def explain_decision(
         reason = str(parsed.get("reasoning", f"Model estimate: {blended_score * 100:.0f}% return likelihood."))
         drivers = parsed.get("key_drivers") or [f"Significant market drop of {drop_percentage:.1f}%.", f"Purchased {days_since_purchase} days ago."]
 
+        drafted_message = str(parsed.get("drafted_customer_message") or generate_customer_message(buyer_name, product_name, refund_amount, competitor_name))
+
         report = {
             "return_probability": blended_score,
             "confidence": str(parsed.get("confidence", "HIGH")),
             "risk_level": str(parsed.get("risk_level", "HIGH" if blended_score >= 0.5 else "MEDIUM")),
             "key_drivers": drivers,
             "reasoning": reason,
+            "drafted_customer_message": drafted_message,
             "retention_impact": str(parsed.get("retention_impact", "Protects brand loyalty by proactively crediting the price drop.")),
             "recommended_action": str(parsed.get("recommended_action", "APPROVE_PARTIAL_REFUND")),
             "provider": active_provider,
@@ -208,7 +243,7 @@ async def explain_decision(
 
     except Exception as exc:
         log.warning("LLM scoring failed (%s), falling back to actuarial rule report.", exc)
-        fallback_report = build_rule_report(category, drop_percentage, days_since_purchase, probability, savings, product_name, purchase_price, refund_amount, return_cost)
+        fallback_report = build_rule_report(category, drop_percentage, days_since_purchase, probability, savings, product_name, purchase_price, refund_amount, return_cost, buyer_name, competitor_name, customer_notes)
         fallback_reason = f"{fallback_report['reasoning']} (LLM unavailable; using deterministic actuarial model)"
         fallback_report["reasoning"] = fallback_reason
         return probability, fallback_reason, "rules", fallback_report

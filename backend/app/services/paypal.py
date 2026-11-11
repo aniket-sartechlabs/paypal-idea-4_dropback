@@ -92,6 +92,15 @@ class PayPalClient:
         }
         return await self.request("POST", "/v2/checkout/orders", request_id=request_id, json=body)
 
+    async def access_token(self) -> str:
+        return await self._access_token()
+
+    async def get_order(self, paypal_order_id: str) -> dict:
+        return await self.request("GET", f"/v2/checkout/orders/{paypal_order_id}")
+
+    async def get_capture(self, paypal_capture_id: str) -> dict:
+        return await self.request("GET", f"/v2/payments/captures/{paypal_capture_id}")
+
     async def capture_order(self, paypal_order_id: str, request_id: str) -> dict:
         return await self.request("POST", f"/v2/checkout/orders/{paypal_order_id}/capture", request_id=request_id, json={})
 

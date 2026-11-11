@@ -1,77 +1,87 @@
-# DropBack
+# DropBack: 14-Day Price Protection & Return Prevention
 
-DropBack helps merchants protect the customer relationship when the price of an item falls. It matches the product through Channel3, finds recent orders that qualify, estimates the cost of a return, and presents a refund recommendation for merchant approval.
+> **Built for the PayPal AI Hackathon 2026**
+> Targeting **AG Grid**, **APIMatic Context Plugins**, and **Channel3** sponsor categories.
 
-## Local setup
+DropBack turns return disputes into customer retention. When a customer purchases an item backed by **14-Day DropBack Insurance**, they can check live competitor prices 2–3 days later. If Channel3 detects a lower market price, the customer submits a price-match dispute instead of returning the physical box. The merchant reviews an **AG Grid** case report detailing the actuarial return cost versus a price difference settlement, customizes an AI-drafted resolution message, and executes an instant refund via **PayPal Sandbox Orders v2**, visible immediately in the customer's portal.
 
-Requirements: Python 3.11+, Node.js 20.19+ (or 22.12+), and npm.
+---
 
-1. Copy `.env.example` to `.env` and fill in PayPal Sandbox credentials, a Channel3 API key, and an OpenAI or Gemini key if model-assisted explanations are wanted. The PayPal client secret and service API keys stay on the backend.
-2. Start the API:
+## 🏆 Hackathon Sponsor Integrations
 
-   ```bash
-   python3 -m venv .venv
-   . .venv/bin/activate
-   pip install -r backend/requirements-dev.txt
-   cd backend
-   uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-   ```
+### 1. Channel3: Live Competitor Catalog & Dispute Trigger
+- **Real Indexed Catalog:** Pre-seeded with items verified in Channel3's index (`Sony WH-1000XM5`, `Breville Barista Express Espresso Machine`, `Apple AirPods Pro 2`, `Amazon Kindle Paperwhite`).
+- **Live Search & Price Checks:** Channel3 extracts live retailer offers, competitor domains (B&H Photo, Macy's, Best Buy, Abt), direct product links, and item shipping weights.
+- **Customer Guarantee Portal (`/portal`):** Buyers can look up their order, trigger a live Channel3 price check within their 14-day window, and submit a price-match dispute.
 
-3. In a second terminal, start the merchant console:
+### 2. AG Grid ($10,000 Prize Category): Enterprise Merchant Console
+- **Rich Grid Interface (`/claims`):** Enterprise-grade AG Grid console with custom cell renderers:
+  - **Buyer & Order:** Initials avatar, customer name, order ID, and blue `CLAIM` pill.
+  - **Channel3 Market Signal:** Live competitor badges (e.g. `B&H Photo: $298.00`) and price drop deltas.
+  - **Return Risk Gauge:** Animated actuarial return probability meter with color-coded risk levels.
+  - **Case Costings Column:** Side-by-side financial comparison showing estimated physical return loss vs. proactive difference settlement.
+  - **AI Actuarial Analysis:** Badge indicating model provider (`OpenAI gpt-4.1-mini`, `Gemini 2.0`, or deterministic engine) with quick inspection links.
+  - **Resolution Actions:** One-click `Review & Settle` button launching the case report modal.
+- **Interactive Capabilities:** Global quick-filter search, sorting, column resizing, and pagination.
 
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
+### 3. APIMatic: Context Plugins & PayPal Sandbox MCP Protocol
+- **Zero-Hallucination Schemas:** Uses APIMatic OpenAPI 3.0 context plugins (`.context-plugins/paypal.json` and `context-plugins.config.json`) to feed modern PayPal v2 Orders and Payments schemas directly to AI agents, preventing hallucinations of deprecated v1 endpoints.
+- **MCP Sandbox Explorer (`/apimatic`):** Interactive Model Context Protocol tool runner exposing 4 verified sandbox tools:
+  - `paypal_check_sandbox_health`
+  - `paypal_get_order_details`
+  - `paypal_get_capture_status`
+  - `paypal_issue_capture_refund`
+- Features real-time latency measurement and verified JSON payload rendering.
 
-4. Open [http://127.0.0.1:5173](http://127.0.0.1:5173). In development, the first-run merchant login is `demo@dropback.local` / `dropback-demo`. Sample orders are clearly marked and cannot be refunded.
+---
 
-The API docs are at [http://127.0.0.1:8000/api/docs](http://127.0.0.1:8000/api/docs). Local development seeds a small sample catalog and order history in `dropback.db`.
+## 🚀 End-to-End User Flow
 
-## Demo flow
+1. **Purchase with 14-Day Guarantee:** Buyer shops at Holloway Goods (`/store`) and pays via PayPal Sandbox.
+2. **Customer Claims Portal (`/portal`):** 2–3 days later, the buyer visits the portal (or clicks quick-demo chip for Maya Chen).
+3. **Live Competitor Scan:** Buyer clicks *Check Live Market Price*. Channel3 scans online retailers and confirms a price drop (e.g., Sony WH-1000XM5 down to $298.00 at B&H Photo vs. $348.00 paid).
+4. **Dispute Submission:** Buyer submits a claim: *"Rather than repacking and shipping the box back, please refund the difference under 14-day price cover."*
+5. **AG Grid Merchant Review (`/claims`):** The merchant sees Maya's pending claim with return risk score, costing comparison, and Channel3 evidence.
+6. **Actuarial Case Report & Resolution Message:** Merchant clicks *Review & Settle*, reviews the side-by-side breakdown (saving $93+ in reverse freight, restocking fees, and open-box markdown), edits the AI-drafted message to Maya, and clicks *Approve & Issue PayPal Refund*.
+7. **Instant PayPal Credit:** The refund is issued via PayPal Orders v2 Sandbox. Maya's portal instantly displays a green celebration card with the credited refund amount and the merchant's personal note.
 
-1. Open **Products** and run **Check live price**. Channel3 searches for a matching product, compares current new offers, stores its product ID, and creates an idempotent price-change subscription. Ongoing notifications require the signed webhook setup below.
-2. If Channel3 reports a lower offer, open **Price drops** and select **Evaluate buyers**. DropBack checks the SKU, purchase date, protection window, minimum drop, remaining capture balance, refund cap, daily budget, and estimated return savings.
-3. Open **Agent review**. Inspect each recommendation, then approve or reject it. Approving a real PayPal sandbox capture issues a partial refund with a stable idempotency key. Sample orders are never refundable.
-4. Visit **Storefront** to create a real sandbox order. Sign in with a Personal sandbox account when PayPal opens. The amount is calculated from the server catalog; the browser cannot set order totals.
+---
 
-Channel3 is the primary source for market price signals. Merchant-entered price updates are also recorded so the merchant can handle changes made directly to their own catalog.
+## 💻 Local Setup & Running
 
-## API and runtime settings
+Requirements: **Python 3.11+**, **Node.js 20+**, and **npm**.
 
-See `.env.example` for the full list. Key settings:
+### 1. Backend Setup
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r backend/requirements-dev.txt
+cd backend
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+- API Docs: [http://127.0.0.1:8000/api/docs](http://127.0.0.1:8000/api/docs)
+- APIMatic Status: [http://127.0.0.1:8000/api/v1/apimatic/status](http://127.0.0.1:8000/api/v1/apimatic/status)
 
-- `PAYPAL_ENV=sandbox` and a sandbox `PAYPAL_BASE_URL` are enforced for local development.
-- `CHANNEL3_API_KEY` is required for the core live price checks and must never be placed in frontend code.
-- `CHANNEL3_WEBHOOK_SECRET` verifies Channel3 product-subscription events. In the Channel3 dashboard, register `https://YOUR_APP_HOST/api/v1/webhooks/channel3` and subscribe to `offer.price.changed` and `offer.availability.changed`. Product subscriptions start after the first successful product match. Without a public HTTPS URL and signing secret, manual live checks work but ongoing event delivery is not configured.
-- `PAYPAL_WEBHOOK_ID` is the ID of the PayPal webhook registered for `/api/v1/webhooks/paypal`.
-- `OPENAI_API_KEY` or `GEMINI_API_KEY` enables model-assisted return-likelihood scoring. Deterministic eligibility, caps, and final policy decisions remain authoritative; scoring falls back to rules if the model is unavailable.
+### 2. Frontend Setup
+```bash
+cd frontend
+npm install
+npm run dev
+```
+- Merchant Console: [http://127.0.0.1:5173/login](http://127.0.0.1:5173/login) (Credentials: `demo@dropback.local` / `dropback-demo`)
+- Customer 14-Day Portal: [http://127.0.0.1:5173/portal](http://127.0.0.1:5173/portal)
+- Storefront: [http://127.0.0.1:5173/store](http://127.0.0.1:5173/store)
+- APIMatic MCP Sandbox: [http://127.0.0.1:5173/apimatic](http://127.0.0.1:5173/apimatic)
 
-The frontend does not receive either PayPal client secret or Channel3 key. `PAYPAL_CLIENT_ID` is public and is returned to the storefront only for SDK initialization.
+---
 
-## Production deployment
+## 🧪 Verification & Testing
 
-The current repository supports a **single merchant account** and a web app backed by PayPal credentials configured in the server environment. It is a production-minded single-merchant deployment foundation, not yet a PayPal multi-merchant SaaS onboarding product. Before real-money use, the merchant must complete PayPal production approval and webhook setup, and the operator must provision a public HTTPS host, database, secrets manager, backups, monitoring, and a merchant login secret.
-
-For production:
-
-- Set `ENVIRONMENT=production`, a long random `SECRET_KEY`, unique `MERCHANT_EMAIL` and `MERCHANT_PASSWORD`, `SESSION_COOKIE_SECURE=true`, an HTTPS `APP_BASE_URL`, and exact HTTPS `CORS_ORIGINS`.
-- Set a PostgreSQL `DATABASE_URL`, for example `postgresql+psycopg://dropback:...@db-host/dropback`, and apply Alembic migrations before starting the API:
-
+- **Backend Pytest Suite (10 passed):**
   ```bash
-  cd backend
-  alembic upgrade head
+  cd backend && ../.venv/bin/pytest -v
   ```
-
-- Configure PayPal live credentials only after approval, with `PAYPAL_ENV=live` and the live API base URL. Configure PayPal webhook verification with the ID returned when the webhook is registered.
-- Set `CHANNEL3_API_KEY` and `CHANNEL3_WEBHOOK_SECRET`, then register the public webhook endpoint in Channel3.
-- Review data retention, account recovery, user provisioning, security monitoring, and legal requirements before onboarding other merchants.
-
-The included Docker Compose setup runs the API, Nginx frontend, and PostgreSQL together. Fill in the production environment settings above plus `POSTGRES_PASSWORD`, point DNS and TLS termination at the web service, then run `docker compose up --build -d`.
-
-Auto-refunds are disabled. A merchant decision is required for every refund. PayPal sandbox is hard-restricted to non-production deployments.
-
-## Verification
-
-Run backend checks with `cd backend && ../.venv/bin/pytest -q` and the frontend production build with `cd frontend && npm run build`.
+- **Frontend TypeScript & Vite Production Build (0 errors):**
+  ```bash
+  cd frontend && npm run build
+  ```

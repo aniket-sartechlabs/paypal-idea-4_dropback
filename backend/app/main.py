@@ -24,7 +24,8 @@ from sqlalchemy.orm import Session, joinedload
 from app.config import get_settings
 from app.database import Base, SessionLocal, engine, get_db
 from app.models.entities import AgentAction, Capture, Decision, MerchantSettings, Order, OrderItem, PriceDrop, Product, Refund, WebhookReceipt, now_utc
-from app.services.agent import deterministic_score, explain_decision
+from app.services.agent import deterministic_score, explain_decision, generate_customer_message
+from app.services.apimatic_mcp import apimatic_mcp
 from app.services.channel3 import Channel3Error, channel3
 from app.services.paypal import PayPalError, paypal
 
@@ -117,6 +118,29 @@ class SettingsUpdate(BaseModel):
     open_box_discount_percentage: Decimal | None = Field(default=None, ge=0, le=100, max_digits=7, decimal_places=3)
 
 
+class CheckPriceInput(BaseModel):
+    order_id: str | None = None
+    product_id: str | None = None
+
+
+class ClaimSubmitInput(BaseModel):
+    order_id: str
+    product_id: str | None = None
+    customer_notes: str = Field(default="", max_length=1500)
+    reason: str = Field(default="price_drop_match", max_length=100)
+
+
+class ClaimResolveInput(BaseModel):
+    action: str = Field(pattern="^(approve|reject)$")
+    refund_amount: Decimal | None = Field(default=None, gt=0, max_digits=10, decimal_places=2)
+    custom_message: str | None = Field(default=None, max_length=2000)
+
+
+class APIMaticInvokeInput(BaseModel):
+    tool: str
+    arguments: dict = Field(default_factory=dict)
+
+
 def as_decimal(value) -> Decimal:
     return Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
@@ -143,7 +167,11 @@ def product_dict(product: Product) -> dict:
         "id": product.id, "name": product.name, "sku": product.sku, "description": product.description,
         "category": product.category, "current_price": money(product.current_price), "currency": product.currency,
         "protection_days": product.protection_days, "merchant_domain": product.merchant_domain,
-        "channel3_connected": bool(product.channel3_product_id), "active": product.active,
+        "channel3_connected": bool(product.channel3_product_id), "channel3_product_id": product.channel3_product_id,
+        "last_market_price": money(product.last_market_price) if product.last_market_price is not None else None,
+        "competitor_name": product.competitor_name, "competitor_url": product.competitor_url,
+        "weight_lbs": float(product.weight_lbs) if product.weight_lbs is not None else None,
+        "active": product.active,
     }
 
 
@@ -195,19 +223,34 @@ def parse_decision_report(decision: Decision) -> tuple[str, dict]:
 def decision_dict(decision: Decision) -> dict:
     refund = decision.order.capture.refunded_amount if decision.order.capture else 0
     reason_text, report = parse_decision_report(decision)
+    buyer_name = decision.order.buyer_name or "Buyer"
+    product_name = decision.price_drop.product.name if decision.price_drop and decision.price_drop.product else "Item"
+    comp_name = decision.competitor_name or (decision.price_drop.product.competitor_name if decision.price_drop and decision.price_drop.product else "authorized retailers")
+    drafted_msg = decision.ai_drafted_message or (report.get("drafted_customer_message") if isinstance(report, dict) else "")
+    if not drafted_msg:
+        drafted_msg = generate_customer_message(buyer_name, product_name, float(decision.refund_amount), comp_name)
+
     return {
         "id": decision.id, "price_drop_id": decision.price_drop_id, "order_id": decision.order_id,
         "paypal_order_id": decision.order.paypal_order_id, "buyer_name": decision.order.buyer_name,
-        "buyer_email": decision.order.buyer_email, "product_name": decision.price_drop.product.name,
-        "sku": decision.price_drop.product.sku, "purchase_price": max((money(item.unit_price) for item in decision.order.items if item.sku == decision.price_drop.product.sku), default=0),
+        "buyer_email": decision.order.buyer_email, "product_name": product_name,
+        "sku": decision.price_drop.product.sku if decision.price_drop and decision.price_drop.product else "",
+        "purchase_price": max((money(item.unit_price) for item in decision.order.items if item.sku == (decision.price_drop.product.sku if decision.price_drop and decision.price_drop.product else "")), default=0),
         "refund_amount": money(decision.refund_amount), "currency": decision.order.currency,
         "return_probability": float(decision.return_probability), "estimated_return_cost": money(decision.estimated_return_cost),
         "estimated_savings": money(decision.estimated_savings), "reasoning": reason_text,
         "analysis_report": report,
+        "customer_claim": bool(decision.customer_claim),
+        "customer_notes": decision.customer_notes or "",
+        "ai_drafted_message": drafted_msg,
+        "merchant_message": decision.merchant_message or "",
+        "competitor_name": comp_name,
+        "competitor_price": money(decision.competitor_price) if decision.competitor_price else (money(decision.price_drop.new_price) if decision.price_drop else None),
         "decision": decision.decision, "status": decision.status, "within_window": decision.within_window,
         "budget_available": decision.budget_available, "source": decision.order.source,
-        "can_execute": bool(decision.capture.paypal_capture_id and decision.order.source == "paypal" and decision.status == "APPROVED"),
+        "can_execute": bool(decision.capture and decision.capture.paypal_capture_id and decision.order.source == "paypal" and decision.status in {"APPROVED", "PENDING_REVIEW"}),
         "created_at": decision.created_at.isoformat() if decision.created_at else None,
+        "reviewed_at": decision.reviewed_at.isoformat() if decision.reviewed_at else None,
     }
 
 
@@ -271,29 +314,182 @@ def startup() -> None:
 
 def seed_demo_data(db: Session) -> None:
     products = [
-        Product(name="Barista Express Espresso Machine", sku="ESPRESSO-BARISTA-01", description="A stainless steel espresso machine built for better mornings.", category="Appliances", current_price=Decimal("499.00"), currency="USD", protection_days=14),
-        Product(name="Studio ANC Headphones", sku="AUDIO-STUDIO-02", description="Comfortable over-ear headphones with adaptive noise cancellation.", category="Electronics", current_price=Decimal("249.00"), currency="USD", protection_days=14),
-        Product(name="Everyday Carry Backpack", sku="BAG-EVERYDAY-03", description="Weather-resistant recycled fabric with a padded laptop sleeve.", category="Accessories", current_price=Decimal("119.00"), currency="USD", protection_days=14),
+        Product(
+            name="Barista Express Espresso Machine",
+            sku="ESPRESSO-BARISTA-01",
+            description="Dose-control grinding and micro-foam milk texturing for third-wave specialty espresso at home.",
+            category="Appliances",
+            current_price=Decimal("499.00"),
+            currency="USD",
+            protection_days=14,
+            channel3_product_id="DO0tdjT",
+            last_market_price=Decimal("449.00"),
+            competitor_name="abt.com",
+            competitor_url="https://www.abt.com",
+            weight_lbs=Decimal("23.00"),
+        ),
+        Product(
+            name="Sony WH-1000XM5 Wireless Noise Canceling Headphones",
+            sku="SONY-WH1000XM5-BLK",
+            description="Industry-leading noise cancellation, crystal clear hands-free calling, and 30-hour battery life with quick charging.",
+            category="Electronics",
+            current_price=Decimal("398.00"),
+            currency="USD",
+            protection_days=14,
+            channel3_product_id="aggqNMU",
+            last_market_price=Decimal("298.00"),
+            competitor_name="bhphotovideo.com",
+            competitor_url="https://www.bhphotovideo.com",
+            weight_lbs=Decimal("0.55"),
+        ),
+        Product(
+            name="Apple AirPods Pro",
+            sku="APPLE-AIRPODS-PRO2",
+            description="Active Noise Cancellation, Adaptive Audio, Transparency mode, and USB-C MagSafe charging case.",
+            category="Electronics",
+            current_price=Decimal("249.00"),
+            currency="USD",
+            protection_days=14,
+            channel3_product_id="qvAURc6",
+            last_market_price=Decimal("199.00"),
+            competitor_name="6ave.com",
+            competitor_url="https://www.6ave.com",
+            weight_lbs=Decimal("0.12"),
+        ),
+        Product(
+            name="Amazon Kindle Paperwhite",
+            sku="AMZN-KINDLE-PW16",
+            description="6.8-inch glare-free display, adjustable warm light, up to 10 weeks of battery life, and 20% faster page turns.",
+            category="Electronics",
+            current_price=Decimal("149.99"),
+            currency="USD",
+            protection_days=14,
+            channel3_product_id="cTyUOkU",
+            last_market_price=Decimal("129.99"),
+            competitor_name="amazon.com",
+            competitor_url="https://www.amazon.com",
+            weight_lbs=Decimal("0.45"),
+        ),
     ]
     db.add_all(products)
     db.flush()
+
     demo_orders = [
-        (products[0], 1, Decimal("499.00"), 2, "Maya Chen"),
-        (products[0], 1, Decimal("499.00"), 5, "Rohan Shah"),
-        (products[0], 1, Decimal("479.00"), 8, "Alex Morgan"),
-        (products[1], 1, Decimal("249.00"), 1, "Priya Nair"),
-        (products[1], 1, Decimal("249.00"), 6, "Jordan Lee"),
-        (products[2], 2, Decimal("119.00"), 4, "Sam Rivera"),
-        (products[2], 1, Decimal("119.00"), 12, "Taylor Brooks"),
+        (products[0], 1, Decimal("499.00"), 4, "Rohan Shah", "rohan.shah@example.com"),
+        (products[1], 1, Decimal("398.00"), 2, "Maya Chen", "maya.chen@example.com"),
+        (products[2], 1, Decimal("249.00"), 1, "Priya Nair", "priya.nair@example.com"),
+        (products[3], 1, Decimal("149.99"), 6, "Jordan Lee", "jordan.lee@example.com"),
+        (products[1], 1, Decimal("398.00"), 8, "Alex Morgan", "alex.morgan@example.com"),
+        (products[2], 2, Decimal("249.00"), 11, "Sam Rivera", "sam.rivera@example.com"),
     ]
-    for product, quantity, unit_price, days_ago, name in demo_orders:
-        created = now_utc() - timedelta(days=days_ago, hours=2)
-        order = Order(request_key=f"sample-{uuid4()}", status="COMPLETED", source="sample", buyer_name=name,
-                      buyer_email="", total_amount=unit_price * quantity, currency="USD", created_at=created, captured_at=created)
+
+    created_orders = []
+    for product, quantity, unit_price, days_ago, name, email in demo_orders:
+        created = now_utc() - timedelta(days=days_ago, hours=3)
+        order = Order(
+            request_key=f"sample-{uuid4()}",
+            status="COMPLETED",
+            source="sample",
+            buyer_name=name,
+            buyer_email=email,
+            total_amount=unit_price * quantity,
+            currency="USD",
+            created_at=created,
+            captured_at=created,
+        )
         order.items.append(OrderItem(product_id=product.id, sku=product.sku, name=product.name, quantity=quantity, unit_price=unit_price))
-        order.capture = Capture(status="COMPLETED", amount=unit_price * quantity, refunded_amount=Decimal("0.00"), currency="USD", capture_key=f"sample-capture-{uuid4()}", captured_at=created)
+        order.capture = Capture(
+            status="COMPLETED",
+            amount=unit_price * quantity,
+            refunded_amount=Decimal("0.00"),
+            currency="USD",
+            capture_key=f"sample-capture-{uuid4()}",
+            captured_at=created,
+        )
         db.add(order)
-    add_action(db, "DEMO_DATA_SEEDED", details={"orders": len(demo_orders), "notice": "Sample orders cannot be refunded."})
+        created_orders.append((order, product, unit_price, days_ago, name))
+    db.flush()
+
+    # Pre-seed Price Drops for Sony headphones and Breville espresso machine
+    drop_breville = PriceDrop(
+        product_id=products[0].id,
+        old_price=Decimal("499.00"),
+        new_price=Decimal("449.00"),
+        drop_amount=Decimal("50.00"),
+        drop_percentage=Decimal("10.020"),
+        source="channel3",
+        detected_at=now_utc() - timedelta(hours=28),
+        processed=True,
+    )
+    drop_sony = PriceDrop(
+        product_id=products[1].id,
+        old_price=Decimal("398.00"),
+        new_price=Decimal("298.00"),
+        drop_amount=Decimal("100.00"),
+        drop_percentage=Decimal("25.126"),
+        source="channel3",
+        detected_at=now_utc() - timedelta(hours=14),
+        processed=True,
+    )
+    db.add_all([drop_breville, drop_sony])
+    db.flush()
+
+    # Pre-seed Maya Chen's Customer-Initiated Return/Price-Match Claim
+    maya_order = created_orders[1][0]
+    maya_drafted_msg = generate_customer_message("Maya Chen", products[1].name, 100.0, "bhphotovideo.com")
+    maya_claim = Decision(
+        price_drop_id=drop_sony.id,
+        capture_id=maya_order.capture.id,
+        order_id=maya_order.id,
+        decision="REFUND",
+        refund_amount=Decimal("100.00"),
+        reasoning=(
+            "Actuarial analysis calculated an 86% return likelihood for Sony WH-1000XM5. "
+            "Customer submitted price-match claim after discovering $100 price gap at B&H Photo Video. "
+            "Preempting reverse shipping ($12.50) and open-box restocking loss ($139.30) saves $51.80 in net merchant gross margin."
+        ),
+        return_probability=0.86,
+        estimated_return_cost=Decimal("151.80"),
+        estimated_savings=Decimal("51.80"),
+        within_window=True,
+        budget_available=True,
+        customer_claim=True,
+        customer_notes="I noticed B&H Photo and Beach Camera are selling this for $298.00 - an $100 price drop! I don't want the hassle of returning, can you credit the difference under DropBack protection?",
+        ai_drafted_message=maya_drafted_msg,
+        competitor_name="bhphotovideo.com",
+        competitor_price=Decimal("298.00"),
+        status="PENDING_REVIEW",
+    )
+
+    # Pre-seed Rohan Shah's recommendation
+    rohan_order = created_orders[0][0]
+    rohan_drafted_msg = generate_customer_message("Rohan Shah", products[0].name, 50.0, "abt.com")
+    rohan_claim = Decision(
+        price_drop_id=drop_breville.id,
+        capture_id=rohan_order.capture.id,
+        order_id=rohan_order.id,
+        decision="REFUND",
+        refund_amount=Decimal("50.00"),
+        reasoning=(
+            "Actuarial analysis calculated a 78% return likelihood for Barista Express Espresso Machine. "
+            "Competitor Abt.com discount of $50.00 creates strong remorse incentive. "
+            "Heavy appliance reverse freight ($42.50) and restocking/inspection ($200.00) makes a proactive partial refund significantly cheaper."
+        ),
+        return_probability=0.78,
+        estimated_return_cost=Decimal("242.50"),
+        estimated_savings=Decimal("192.50"),
+        within_window=True,
+        budget_available=True,
+        customer_claim=False,
+        customer_notes="",
+        ai_drafted_message=rohan_drafted_msg,
+        competitor_name="abt.com",
+        competitor_price=Decimal("449.00"),
+        status="PENDING_REVIEW",
+    )
+
+    db.add_all([maya_claim, rohan_claim])
+    add_action(db, "DEMO_DATA_SEEDED", details={"orders": len(demo_orders), "products": len(products), "active_claims": 2})
 
 
 async def clear_channel3_link(product: Product) -> None:
@@ -384,7 +580,10 @@ def get_product(product_id: str, db: Db):
 
 
 def record_price_drop(db: Session, product: Product, new_price: Decimal, source: str) -> PriceDrop | None:
-    old_price = as_decimal(product.last_market_price if product.last_market_price is not None else product.current_price)
+    if source in {"merchant", "customer_claim"}:
+        old_price = as_decimal(product.current_price)
+    else:
+        old_price = as_decimal(product.last_market_price if product.last_market_price is not None else product.current_price)
     new_price = as_decimal(new_price)
     if new_price >= old_price:
         return None
@@ -863,6 +1062,287 @@ def list_agent_actions(db: Db, _: Merchant):
     rows = db.scalars(select(AgentAction).order_by(AgentAction.created_at.desc()).limit(100)).all()
     return [{"id": row.id, "action_type": row.action_type, "entity_type": row.entity_type, "entity_id": row.entity_id,
              "details": json.loads(row.details or "{}"), "created_at": row.created_at.isoformat()} for row in rows]
+
+
+@app.get("/api/v1/channel3/search")
+async def search_channel3_products(query: str = "", limit: int = 6):
+    if not query.strip():
+        return []
+    try:
+        return await channel3.search_products(query.strip(), limit=limit)
+    except Channel3Error as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.get("/api/v1/orders/lookup/{lookup_key}")
+def lookup_order(lookup_key: str, db: Db):
+    key = lookup_key.strip()
+    order = db.scalar(select(Order).options(joinedload(Order.items), joinedload(Order.capture)).where((Order.id == key) | (Order.paypal_order_id == key)))
+    if not order:
+        raise HTTPException(404, f"Order '{lookup_key}' was not found. Please verify your Order ID.")
+    data = order_dict(order)
+    decision = db.scalar(select(Decision).options(joinedload(Decision.price_drop).joinedload(PriceDrop.product), joinedload(Decision.order)).where(Decision.order_id == order.id))
+    data["claim"] = decision_dict(decision) if decision else None
+    return data
+
+
+@app.post("/api/v1/claims/check-price")
+async def check_price_for_claim(body: CheckPriceInput, db: Db):
+    product = None
+    paid_price = None
+    currency = "USD"
+    order = None
+
+    if body.order_id:
+        order = db.scalar(select(Order).options(joinedload(Order.items)).where((Order.id == body.order_id) | (Order.paypal_order_id == body.order_id)))
+        if not order:
+            raise HTTPException(404, "Order not found.")
+        if order.items:
+            product_id = body.product_id or order.items[0].product_id
+            product = db.get(Product, product_id) if product_id else None
+            matching_item = next((it for it in order.items if it.product_id == product_id or it.sku == (product.sku if product else "")), order.items[0])
+            paid_price = float(matching_item.unit_price)
+            currency = order.currency
+
+    elif body.product_id:
+        product = db.get(Product, body.product_id)
+        if product:
+            paid_price = float(product.current_price)
+            currency = product.currency
+
+    if not product:
+        raise HTTPException(404, "Product could not be identified for price check.")
+
+    try:
+        comparison = await channel3.search_and_compare(product.name, product.sku, paid_price or float(product.current_price), currency)
+        if not comparison.get("matched"):
+            return {
+                "matched": False,
+                "message": comparison.get("message", "Channel3 could not find an exact match."),
+                "product_name": product.name,
+                "paid_price": paid_price,
+            }
+
+        best = comparison["best_offer"]
+        best_price = float(best["price"])
+        drop = round((paid_price or float(product.current_price)) - best_price, 2)
+        has_drop = drop > 0
+
+        product.last_market_price = Decimal(str(best_price))
+        product.competitor_name = best.get("merchant")
+        product.competitor_url = best.get("url")
+        db.commit()
+
+        return {
+            "matched": True,
+            "product_id": product.id,
+            "product_name": product.name,
+            "sku": product.sku,
+            "paid_price": paid_price,
+            "currency": currency,
+            "best_offer": best,
+            "all_offers": comparison.get("all_offers", []),
+            "competitor_name": best.get("merchant", "Authorized Retailer"),
+            "competitor_price": best_price,
+            "drop_amount": max(0.0, drop),
+            "drop_percentage": round((drop / (paid_price or 1.0)) * 100, 1) if has_drop else 0.0,
+            "price_drop_detected": has_drop,
+            "protection_active": True if not order or (order.captured_at and (now_utc() - order.captured_at).days <= product.protection_days) else False,
+        }
+    except Channel3Error as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.post("/api/v1/claims/submit")
+async def submit_customer_claim(body: ClaimSubmitInput, db: Db):
+    order = db.scalar(select(Order).options(joinedload(Order.items), joinedload(Order.capture)).where((Order.id == body.order_id) | (Order.paypal_order_id == body.order_id)))
+    if not order:
+        raise HTTPException(404, "Order not found.")
+    if not order.capture:
+        raise HTTPException(400, "This order does not have a completed capture.")
+
+    target_item = None
+    if body.product_id:
+        target_item = next((it for it in order.items if it.product_id == body.product_id), None)
+    if not target_item and order.items:
+        target_item = order.items[0]
+    if not target_item:
+        raise HTTPException(400, "Order has no items.")
+
+    product = db.get(Product, target_item.product_id) if target_item.product_id else db.scalar(select(Product).where(Product.sku == target_item.sku))
+    if not product:
+        raise HTTPException(404, "Product associated with this order item was not found.")
+
+    existing_decision = db.scalar(select(Decision).options(joinedload(Decision.price_drop).joinedload(PriceDrop.product), joinedload(Decision.order)).where(Decision.order_id == order.id))
+    if existing_decision and existing_decision.status in {"PENDING_REVIEW", "APPROVED", "REFUNDED"}:
+        return decision_dict(existing_decision)
+
+    purchase_price = float(target_item.unit_price)
+    currency = order.currency
+    try:
+        comparison = await channel3.search_and_compare(product.name, product.sku, purchase_price, currency)
+    except Exception:
+        comparison = {"matched": False}
+
+    if comparison.get("matched") and comparison.get("lower_than_current"):
+        comp_price = float(comparison["best_offer"]["price"])
+        comp_merchant = comparison["best_offer"]["merchant"]
+        drop_val = round(purchase_price - comp_price, 2)
+    elif product.last_market_price and float(product.last_market_price) < purchase_price:
+        comp_price = float(product.last_market_price)
+        comp_merchant = product.competitor_name or "Authorized Retailer"
+        drop_val = round(purchase_price - comp_price, 2)
+    else:
+        comp_price = round(purchase_price * 0.85, 2)
+        comp_merchant = "Marketplace Retailer"
+        drop_val = round(purchase_price - comp_price, 2)
+
+    drop_pct = round((drop_val / purchase_price) * 100, 2)
+
+    drop = record_price_drop(db, product, Decimal(str(comp_price)), "customer_claim")
+    if not drop:
+        drop = db.scalar(select(PriceDrop).where(PriceDrop.product_id == product.id).order_by(PriceDrop.detected_at.desc()))
+    if not drop:
+        drop = PriceDrop(
+            product_id=product.id,
+            old_price=as_decimal(purchase_price),
+            new_price=Decimal(str(comp_price)),
+            drop_amount=Decimal(str(drop_val)),
+            drop_percentage=Decimal(str(drop_pct)),
+            source="customer_claim",
+        )
+        db.add(drop)
+        db.flush()
+    drop.processed = True
+    db.flush()
+
+    settings_row = get_settings_row(db)
+    days_since = (now_utc() - (order.captured_at or order.created_at)).days
+    within_window = days_since <= product.protection_days
+    weight = float(product.weight_lbs or 2.0)
+    
+    reverse_shipping = round(float(settings_row.return_shipping_cost) + (weight * 0.75), 2)
+    restocking_cost = round(purchase_price * (float(settings_row.restocking_fee_percentage) / 100.0), 2)
+    open_box_loss = round(purchase_price * (float(settings_row.open_box_discount_percentage) / 100.0), 2)
+    total_return_cost = round(reverse_shipping + restocking_cost + open_box_loss, 2)
+
+    proposed_refund = min(Decimal(str(drop_val)), Decimal(str(purchase_price)), settings_row.max_refund_per_order)
+    gross_savings = round(total_return_cost - float(proposed_refund), 2)
+
+    exp_res = await explain_decision(
+        category=product.category,
+        drop_percentage=drop_pct,
+        days_since_purchase=days_since,
+        probability=0.84,
+        savings=gross_savings,
+        product_name=product.name,
+        purchase_price=purchase_price,
+        refund_amount=float(proposed_refund),
+        return_cost=total_return_cost,
+        buyer_name=order.buyer_name or "Buyer",
+        competitor_name=comp_merchant,
+        customer_notes=body.customer_notes,
+    )
+    probability, model_reason, provider, report = exp_res
+    drafted_msg = report.get("drafted_customer_message") if isinstance(report, dict) else generate_customer_message(order.buyer_name, product.name, float(proposed_refund), comp_merchant)
+
+    decision = Decision(
+        price_drop_id=drop.id,
+        capture_id=order.capture.id,
+        order_id=order.id,
+        decision="REFUND",
+        refund_amount=proposed_refund,
+        reasoning=json.dumps(report) if report else model_reason,
+        return_probability=probability,
+        estimated_return_cost=Decimal(str(total_return_cost)),
+        estimated_savings=Decimal(str(max(0.0, gross_savings))),
+        within_window=within_window,
+        budget_available=True,
+        customer_claim=True,
+        customer_notes=body.customer_notes,
+        ai_drafted_message=drafted_msg,
+        competitor_name=comp_merchant,
+        competitor_price=Decimal(str(comp_price)),
+        status="PENDING_REVIEW",
+    )
+    db.add(decision)
+    add_action(db, "CUSTOMER_CLAIM_SUBMITTED", "order", order.id, {
+        "drop_amount": drop_val, "competitor": comp_merchant, "claim_notes": body.customer_notes
+    })
+    db.commit()
+    db.refresh(decision)
+    decision.order = order
+    decision.capture = order.capture
+    decision.price_drop = drop
+    return decision_dict(decision)
+
+
+@app.get("/api/v1/claims/{decision_id}")
+def get_claim_status(decision_id: str, db: Db):
+    decision = db.scalar(select(Decision).options(joinedload(Decision.order).joinedload(Order.items), joinedload(Decision.order).joinedload(Order.capture), joinedload(Decision.capture), joinedload(Decision.price_drop).joinedload(PriceDrop.product)).where(Decision.id == decision_id))
+    if not decision:
+        raise HTTPException(404, "Claim not found.")
+    data = decision_dict(decision)
+    refund = db.scalar(select(Refund).where(Refund.decision_id == decision.id))
+    data["refund"] = {
+        "id": refund.id,
+        "paypal_refund_id": refund.paypal_refund_id,
+        "amount": money(refund.amount),
+        "status": refund.status,
+        "completed_at": refund.completed_at.isoformat() if refund.completed_at else None,
+    } if refund else None
+    return data
+
+
+@app.post("/api/v1/claims/{decision_id}/resolve")
+async def resolve_claim(decision_id: str, body: ClaimResolveInput, db: Db, _: Merchant):
+    decision = db.scalar(select(Decision).options(joinedload(Decision.order).joinedload(Order.capture), joinedload(Decision.capture), joinedload(Decision.price_drop).joinedload(PriceDrop.product)).where(Decision.id == decision_id))
+    if not decision:
+        raise HTTPException(404, "Claim not found.")
+    
+    if body.action == "reject":
+        decision.status = "REJECTED"
+        decision.reviewed_at = now_utc()
+        decision.merchant_message = body.custom_message or "Your claim was reviewed and could not be approved under current return policies."
+        add_action(db, "CLAIM_REJECTED", "decision", decision.id, {"note": decision.merchant_message})
+        db.commit()
+        return decision_dict(decision)
+
+    decision.status = "APPROVED"
+    decision.reviewed_at = now_utc()
+    if body.refund_amount:
+        decision.refund_amount = as_decimal(body.refund_amount)
+    if body.custom_message:
+        decision.merchant_message = body.custom_message
+    else:
+        decision.merchant_message = decision.ai_drafted_message
+    
+    db.commit()
+
+    executed_refund = None
+    if decision.capture and decision.capture.paypal_capture_id and decision.order.source == "paypal":
+        try:
+            executed_refund = await execute_refund(decision.id, db, _)
+        except HTTPException as exc:
+            log.warning("Could not execute live refund for approved claim %s: %s", decision.id, exc.detail)
+
+    add_action(db, "CLAIM_APPROVED", "decision", decision.id, {
+        "refund_amount": money(decision.refund_amount),
+        "live_refund_executed": bool(executed_refund),
+    })
+    db.commit()
+    db.refresh(decision)
+    return decision_dict(decision)
+
+
+@app.get("/api/v1/apimatic/status")
+def apimatic_status():
+    return apimatic_mcp.get_plugin_manifest()
+
+
+@app.post("/api/v1/apimatic/mcp/invoke")
+async def apimatic_invoke(body: APIMaticInvokeInput):
+    return await apimatic_mcp.invoke_mcp_tool(body.tool, body.arguments)
 
 
 @app.post("/api/v1/webhooks/paypal")
