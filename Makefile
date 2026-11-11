@@ -1,7 +1,7 @@
 PYTHON ?= python3
 VENV_PY := $(if $(wildcard .venv/bin/python),.venv/bin/python,python)
 
-.PHONY: setup dev api frontend watch test sandbox-check sandbox-buyer sandbox-demo demo-video-check demo-video submission-check
+.PHONY: setup dev api frontend watch test sandbox-check sandbox-buyer sandbox-demo demo-video-check demo-video demo-video-final submission-check
 
 setup:
 	$(VENV_PY) scripts/tasks.py setup
@@ -35,6 +35,9 @@ demo-video-check:
 
 demo-video:
 	$(VENV_PY) scripts/tasks.py demo-video $(ARGS)
+
+demo-video-final:
+	python3 demo-video/build_final_video.py
 
 submission-check:
 	$(VENV_PY) scripts/tasks.py submission-check

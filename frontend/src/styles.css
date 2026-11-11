@@ -154,6 +154,12 @@
 .claim-submission-card textarea{width:100%;height:80px;border:1px solid #d4d4d4;border-radius:6px;padding:10px;font-size:12px;font-family:inherit;outline:0}
 .claim-submission-card textarea:focus{border-color:#2563eb}
 .claim-status-banner{background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:20px;display:flex;align-items:flex-start;gap:14px}
+.claim-status-banner{animation:claim-status-enter .42s cubic-bezier(.2,.75,.25,1) both;box-shadow:0 8px 22px rgba(35,91,61,.045)}
+.claim-status-banner:not(.pending){border-color:#cfe6d7;background:linear-gradient(112deg,#f0f8f1 0%,#f8fbf7 68%,#eef7f0 100%)}
+.claim-status-banner:not(.pending)>div:first-child{box-shadow:0 0 0 5px rgba(36,130,78,.09);animation:claim-check-glow 1s ease-out both}
+@keyframes claim-status-enter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes claim-check-glow{0%{box-shadow:0 0 0 0 rgba(36,130,78,.25)}100%{box-shadow:0 0 0 5px rgba(36,130,78,.09)}}
+@media(prefers-reduced-motion:reduce){.claim-status-banner,.claim-status-banner:not(.pending)>div:first-child{animation:none}}
 .claim-status-banner.pending{background:#eff6ff;border-color:#bfdbfe}
 .claim-status-banner h3{margin:0 0 4px;font-size:15px;color:#065f46}
 .claim-status-banner.pending h3{color:#1e40af}

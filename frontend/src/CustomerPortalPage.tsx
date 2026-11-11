@@ -53,6 +53,32 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
     }
   }, [orderId, location.search])
 
+  // Keep an open buyer order page in sync while the merchant reviews a claim.
+  // This lets the completed PayPal refund and the merchant's note arrive without
+  // asking the buyer to refresh the page.
+  useEffect(() => {
+    if (!order?.id || activeClaim?.status !== 'PENDING_REVIEW') return
+    let alive = true
+    const timer = window.setInterval(async () => {
+      try {
+        const latest = await lookupOrder(order.id)
+        if (!alive || !latest.claim) return
+        const previous = activeClaim
+        setOrder(latest)
+        setSubmittedClaim(latest.claim)
+        if (latest.claim.status === 'REFUNDED' && previous.status !== 'REFUNDED') {
+          toast?.({
+            kind: 'success',
+            message: `Refund received: ${money(latest.claim.refund_amount, latest.claim.currency)} was credited to your PayPal account.`,
+          })
+        }
+      } catch {
+        // A transient refresh failure should not interrupt the buyer's page.
+      }
+    }, 5000)
+    return () => { alive = false; window.clearInterval(timer) }
+  }, [order?.id, activeClaim?.status, toast])
+
   const onSubmitLookup = (e: FormEvent) => {
     e.preventDefault()
     if (lookupKey) {
@@ -213,7 +239,7 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
 
             {/* RESOLUTION STATUS BANNER IF CLAIM EXISTS */}
             {activeClaim && (
-              <div className={`claim-status-banner ${activeClaim.status === 'PENDING_REVIEW' ? 'pending' : ''}`}>
+              <div key={`${activeClaim.id}-${activeClaim.status}`} className={`claim-status-banner ${activeClaim.status === 'PENDING_REVIEW' ? 'pending' : ''}`} role="status" aria-live="polite">
                 {activeClaim.status === 'APPROVED' || activeClaim.status === 'REFUNDED' ? (
                   <>
                     <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#10b981', color: '#fff', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
