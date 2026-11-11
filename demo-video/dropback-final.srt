@@ -1,0 +1,51 @@
+1
+00:00:00,000 --> 00:00:04,000
+The headphones are in the buyer’s bag. The buyer starts PayPal checkout.
+
+2
+00:00:04,000 --> 00:00:08,800
+PayPal approval opens inside the checkout page, keeping the buyer in the same view.
+
+3
+00:00:08,800 --> 00:00:27,000
+Sandbox credentials fill automatically. Private account details are hidden in this recording.
+
+4
+00:00:27,000 --> 00:00:30,800
+PayPal verifies the Sandbox buyer and loads the saved wallet.
+
+5
+00:00:30,800 --> 00:00:43,500
+Saved funding details stay private. The purchase approval remains visible.
+
+6
+00:00:43,500 --> 00:00:47,250
+PayPal confirms the Sandbox purchase and returns to the order flow.
+
+7
+00:00:47,250 --> 00:00:49,550
+The buyer opens the purchased headphones under 14-day price protection.
+
+8
+00:00:49,550 --> 00:00:52,550
+Channel3 finds the live beachcamera.com offer at $319.99, a $78.01 difference.
+
+9
+00:00:52,550 --> 00:00:55,250
+The buyer requests the difference and keeps the item.
+
+10
+00:00:55,250 --> 00:01:00,560
+AG Grid keeps the resolved buyer request, live Channel3 offer, and PayPal outcome together.
+
+11
+00:01:00,560 --> 00:01:09,920
+The AI report compares return risk and logistics with a $78.01 refund, protecting $93.60 in margin.
+
+12
+00:01:09,920 --> 00:01:20,480
+APIMatic documents the PayPal Orders v2 and Payments v2 contracts behind the Sandbox flow.
+
+13
+00:01:20,480 --> 00:01:28,700
+The buyer portal shows the completed $78.01 PayPal credit and the merchant’s personal message.
