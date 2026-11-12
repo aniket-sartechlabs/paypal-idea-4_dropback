@@ -29,11 +29,22 @@ The Sandbox walkthrough creates a real test payment and refund in the configured
 - Merchants can sort, resize, filter, and inspect rows, then open a case for the evidence and AI report before choosing a resolution.
 - The grid uses separate compact column sizing and clipped/wrapped cell content to remain readable at narrower widths.
 
-### APIMatic Context Plugin
+### APIMatic: PayPal Server SDK and MCP
 
-- `.context-plugins/paypal.json` is the source for the PayPal API contract and MCP tool schemas shown in the app.
-- `/apimatic` displays the manifest and exposes DropBack's authenticated server-side bridge for PayPal Sandbox health, order lookup, capture lookup, and manual refund calls.
-- The bridge executes against PayPal Sandbox; this prototype does not claim to use an APIMatic-hosted runtime. Manual refunds are constrained to known merchant captures and the remaining capture balance.
+- **Every PayPal call uses the APIMatic-generated [PayPal Server SDK](https://pypi.org/project/paypal-server-sdk/)** (`paypalserversdk`): `orders.create_order`, `orders.capture_order`, `orders.get_order`, `payments.refund_captured_payment`, `payments.get_captured_payment`, and `payments.get_refund`. Requests are built from the SDK's typed models (`OrderRequest`, `PurchaseUnitRequest`, `Item`, `Money`, `RefundRequest`), and the SDK manages OAuth. See `backend/app/services/paypal.py`. The only call outside the SDK is PayPal webhook signature verification, which the SDK doesn't cover.
+- **DropBack MCP server** at `http://127.0.0.1:8000/mcp/` (streamable HTTP, `Authorization: Bearer $MCP_API_TOKEN`). It exposes read-only tools: `paypal_check_sandbox_health`, `paypal_get_order_details`, `paypal_get_capture_status`, `dropback_list_claims`, and `dropback_get_claim`. Refunds are deliberately not available over MCP; money only moves after a merchant clicks approve.
+- **APIMatic Context Plugin** (`https://chatbotapi.apimatic.io/mcp/plugins`) is registered in `.mcp.json`. AI coding agents such as Claude Code or Cursor get current PayPal Server SDK docs and samples while working on this repository.
+- `/apimatic` (the PayPal API lab) lists the SDK operations, shows MCP status, and runs the SDK tools against Sandbox. A manual refund there needs a fresh idempotency key per refund and respects the capture balance, per-order cap, and daily budget.
+
+## Security model
+
+- **Merchant console:** email/password sign-in (`MERCHANT_EMAIL` / `MERCHANT_PASSWORD`), using a signed httponly cookie with rate-limited attempts.
+- **Buyers:** the browser that starts a checkout can open that order. From any other browser, the buyer signs in at `/portal` with the order ID and the email on their PayPal account. Order lookup, price checks, claims, and claim status all require that buyer session (or a merchant session).
+- Channel3 search, the product catalog API, and the PayPal API lab are merchant-only. Buyer price checks are rate-limited per order and never change the merchant's catalog data.
+
+## AI scoring
+
+The return-likelihood score starts from a rule-based model (category, size of the drop, days since purchase). With `OPENAI_API_KEY` (or `GEMINI_API_KEY` and `LLM_PROVIDER=gemini`) set in `.env`, `gpt-4.1-mini` reviews the case, drafts the buyer message, and can move the score by at most ±0.15. The buyer's note is passed to the model as fenced, untrusted text. Policy checks (window, minimum drop, caps, budget) never depend on the model. Without a key, the rule model is used and the case report says so.
 
 ## Setup
 
@@ -44,7 +55,9 @@ cp .env.example .env
 make setup
 ```
 
-Set the PayPal Sandbox client ID and secret, Channel3 API key, and Sandbox buyer email/password in `.env`. The buyer credentials are consumed only by the local Playwright runner; they are not sent to the browser app. Keep `.env` private. The runner refuses to transact unless PayPal is configured for the official Sandbox API endpoint.
+Set the PayPal Sandbox client ID and secret, Channel3 API key, and Sandbox buyer email/password in `.env`. Optionally set `OPENAI_API_KEY` (AI scoring) and `MCP_API_TOKEN` (MCP server). The buyer credentials are consumed only by the local Playwright runner; they are not sent to the browser app. Keep `.env` private. The runner refuses to transact unless PayPal is configured for the official Sandbox API endpoint.
+
+Development uses SQLite (`dropback.db`, created on first start). If you ran an earlier version, delete `dropback.db` or run `alembic upgrade head` in `backend/` so the schema includes the new columns.
 
 Start the API and frontend with hot reload:
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, Check, Code2, ExternalLink, LoaderCircle, Play, RefreshCw, ShieldCheck } from 'lucide-react'
-import { api, getApimaticStatus, invokeApimaticTool } from './api'
-import type { APIMaticStatus } from './types'
+import { AlertCircle, Check, Code2, ExternalLink, LoaderCircle, Play, Plug, RefreshCw, ShieldCheck } from 'lucide-react'
+import { api, getPayPalToolsStatus, invokePayPalTool, money } from './api'
+import type { PayPalToolsStatus } from './types'
 
 type SandboxOrder = {
   order_id: string
@@ -11,24 +11,28 @@ type SandboxOrder = {
   amount: number
   currency: string
   status: string
+  refundable_balance: number
 }
 
-const TOOLS = [
-  { name: 'paypal_check_sandbox_health', label: 'Check sandbox health', kind: 'health', description: 'Verify OAuth and PayPal sandbox connectivity.' },
-  { name: 'paypal_get_order_details', label: 'Get order details', kind: 'order', description: 'Read a PayPal Orders v2 record.' },
-  { name: 'paypal_get_capture_status', label: 'Get capture status', kind: 'capture', description: 'Read a captured payment and its status.' },
-  { name: 'paypal_issue_capture_refund', label: 'Issue capture refund', kind: 'refund', description: 'Send a partial or full refund to a captured payment.' },
-]
+const TOOL_UI: Record<string, { label: string; kind: 'health' | 'order' | 'capture' | 'refund' }> = {
+  paypal_check_sandbox_health: { label: 'Check sandbox health', kind: 'health' },
+  paypal_get_order_details: { label: 'Get order details', kind: 'order' },
+  paypal_get_capture_status: { label: 'Get capture status', kind: 'capture' },
+  paypal_issue_capture_refund: { label: 'Issue capture refund', kind: 'refund' },
+}
+
+const newKey = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`)
 
 export default function APIMaticPage({ toast }: { toast?: (t: { message: string; kind: 'success' | 'error' | 'info' }) => void }) {
-  const [manifest, setManifest] = useState<APIMaticStatus | null>(null)
+  const [status, setStatus] = useState<PayPalToolsStatus | null>(null)
   const [sandboxOrders, setSandboxOrders] = useState<SandboxOrder[]>([])
   const [selectedTool, setSelectedTool] = useState('paypal_check_sandbox_health')
   const [orderId, setOrderId] = useState('')
   const [captureId, setCaptureId] = useState('')
   const [refundAmount, setRefundAmount] = useState('')
-  const [refundCurrency, setRefundCurrency] = useState('USD')
-  const [noteToPayer, setNoteToPayer] = useState('DropBack 14-day price protection difference refund')
+  const [noteToPayer, setNoteToPayer] = useState('DropBack price protection difference refund')
+  // One key per refund the merchant intends to send; a retry of the same refund reuses it.
+  const [refundKey, setRefundKey] = useState(newKey)
   const [loading, setLoading] = useState(true)
   const [executing, setExecuting] = useState(false)
   const [response, setResponse] = useState<any | null>(null)
@@ -38,11 +42,11 @@ export default function APIMaticPage({ toast }: { toast?: (t: { message: string;
   const loadPageData = async () => {
     setLoading(true)
     try {
-      const [status, orders] = await Promise.all([
-        getApimaticStatus(),
-        api<SandboxOrder[]>('/apimatic/sandbox-orders').catch(() => [] as SandboxOrder[]),
+      const [toolStatus, orders] = await Promise.all([
+        getPayPalToolsStatus(),
+        api<SandboxOrder[]>('/paypal-tools/sandbox-orders').catch(() => [] as SandboxOrder[]),
       ])
-      setManifest(status)
+      setStatus(toolStatus)
       setSandboxOrders(orders)
       const latest = orders.find(order => order.order_id)
       if (latest) {
@@ -60,8 +64,7 @@ export default function APIMaticPage({ toast }: { toast?: (t: { message: string;
     void loadPageData().then(async () => {
       const started = performance.now()
       try {
-        const health = await invokeApimaticTool('paypal_check_sandbox_health', {})
-        setResponse(health)
+        setResponse(await invokePayPalTool('paypal_check_sandbox_health', {}))
         setLatency(Math.round(performance.now() - started))
       } catch (err) {
         setError(err instanceof Error ? err.message : 'PayPal sandbox health check failed.')
@@ -69,41 +72,35 @@ export default function APIMaticPage({ toast }: { toast?: (t: { message: string;
     })
   }, [])
 
+  const selectTool = (name: string) => { setSelectedTool(name); setError('') }
+  const kind = TOOL_UI[selectedTool]?.kind || 'health'
+
   const handleRunTool = async () => {
     setError('')
-    if (selectedTool === 'paypal_get_order_details' && !orderId.trim()) {
-      setError('Choose a captured PayPal sandbox order first.')
-      return
-    }
-    if ((selectedTool === 'paypal_get_capture_status' || selectedTool === 'paypal_issue_capture_refund') && !captureId.trim()) {
-      setError('Choose a captured PayPal sandbox payment first.')
-      return
-    }
-    if (selectedTool === 'paypal_issue_capture_refund') {
+    if (kind === 'order' && !orderId.trim()) return setError('Choose a captured PayPal sandbox order first.')
+    if ((kind === 'capture' || kind === 'refund') && !captureId.trim()) return setError('Choose a captured PayPal sandbox payment first.')
+    let args: Record<string, any> = {}
+    if (kind === 'order') args = { order_id: orderId.trim() }
+    if (kind === 'capture') args = { capture_id: captureId.trim() }
+    if (kind === 'refund') {
       const amount = Number(refundAmount)
-      if (!Number.isFinite(amount) || amount <= 0) {
-        setError('Enter a refund amount greater than zero.')
-        return
-      }
-      if (!window.confirm(`Issue a ${new Intl.NumberFormat('en-US', { style: 'currency', currency: refundCurrency }).format(amount)} refund to PayPal capture ${captureId}?`)) return
+      if (!Number.isFinite(amount) || amount <= 0) return setError('Enter a refund amount greater than zero.')
+      if (!window.confirm(`Issue a ${money(amount)} refund to PayPal capture ${captureId}?`)) return
+      args = { capture_id: captureId.trim(), amount: amount.toFixed(2), currency: 'USD', note_to_payer: noteToPayer }
     }
 
     setExecuting(true)
     setResponse(null)
     setLatency(null)
-    let args: Record<string, any> = {}
-    if (selectedTool === 'paypal_get_order_details') args = { order_id: orderId.trim() }
-    if (selectedTool === 'paypal_get_capture_status') args = { capture_id: captureId.trim() }
-    if (selectedTool === 'paypal_issue_capture_refund') {
-      args = { capture_id: captureId.trim(), amount: Number(refundAmount), currency: refundCurrency, note_to_payer: noteToPayer }
-    }
     const started = performance.now()
     try {
-      const result = await invokeApimaticTool(selectedTool, args)
+      const result = await invokePayPalTool(selectedTool, args, kind === 'refund' ? refundKey : undefined)
       setResponse(result)
       setLatency(Math.round(performance.now() - started))
-      if (result.status === 'SUCCESS') toast?.({ kind: 'success', message: `${selectedTool} completed.` })
-      else setError(result.error || 'PayPal did not complete the request.')
+      if (result.status === 'SUCCESS') {
+        toast?.({ kind: 'success', message: kind === 'refund' ? `Refund ${result.refund_status?.toLowerCase() || 'sent'}${result.replayed ? ' (already sent)' : ''}.` : `${TOOL_UI[selectedTool]?.label} completed.` })
+        if (kind === 'refund') { setRefundKey(newKey()); setRefundAmount(''); void loadPageData() }
+      } else setError(result.error || 'PayPal did not complete the request.')
     } catch (err) {
       setLatency(Math.round(performance.now() - started))
       setError(err instanceof Error ? err.message : 'Tool execution failed.')
@@ -112,16 +109,16 @@ export default function APIMaticPage({ toast }: { toast?: (t: { message: string;
     }
   }
 
-  const selected = TOOLS.find(tool => tool.name === selectedTool) || TOOLS[0]
-  const contracts = Object.entries(manifest?.schemas || {})
+  const tools = status?.tools || []
+  const selectedOrder = sandboxOrders.find(order => order.capture_id === captureId)
 
   return (
     <div className="api-lab-page" data-testid="apimatic-page">
       <div className="page-heading api-lab-heading">
         <div>
-          <div className="eyebrow">APIMATIC CONTEXT PLUGIN <span>·</span> PAYPAL SANDBOX</div>
+          <div className="eyebrow">PAYPAL SERVER SDK <span>·</span> GENERATED BY APIMATIC <span>·</span> MCP</div>
           <h1>PayPal API lab</h1>
-          <p>Inspect the APIMatic PayPal contract manifest and run DropBack’s server-side bridge against PayPal Sandbox.</p>
+          <p>Every PayPal call in DropBack goes through the APIMatic-generated PayPal Server SDK. Run those calls here, or connect an AI agent to DropBack’s MCP server.</p>
         </div>
         <button type="button" className="button button-light" onClick={() => void loadPageData()} disabled={loading}>
           {loading ? <LoaderCircle size={15} className="spin" /> : <RefreshCw size={15} />} Refresh
@@ -131,52 +128,71 @@ export default function APIMaticPage({ toast }: { toast?: (t: { message: string;
       <section className="api-connection-strip">
         <div className="api-connection-mark"><Code2 size={18} /></div>
         <div className="api-connection-copy">
-          <b>{manifest?.context_plugin_name || 'PayPal Orders & Payments context'}</b>
-          <span>Manifest v{manifest?.version || '—'} · Orders v2 + Payments v2 · {manifest?.tools_count ?? 4} MCP tools · {manifest?.manifest_loaded ? 'loaded from repository' : 'manifest unavailable'}</span>
+          <b>{status?.sdk_package || 'paypal-server-sdk'} {status?.sdk_version ? `v${status.sdk_version}` : ''}</b>
+          <span>Orders v2 + Payments v2 · {status?.operations.length ?? 0} SDK operations · OAuth handled by the SDK</span>
         </div>
-        <div className={`api-health-chip ${manifest?.sandbox_ready ? 'ready' : 'missing'}`}>
-          <i /> PayPal {manifest?.environment || 'sandbox'} {manifest?.sandbox_ready ? 'credentials configured' : 'credentials needed'}
+        <div className={`api-health-chip ${status?.sandbox_ready ? 'ready' : 'missing'}`}>
+          <i /> PayPal {status?.environment || 'sandbox'} {status?.sandbox_ready ? 'credentials configured' : 'credentials needed'}
         </div>
-        <a href="https://apimatic.io" target="_blank" rel="noreferrer" className="api-external-link">APIMatic <ExternalLink size={13} /></a>
+        <a href="https://github.com/paypal/PayPal-Python-Server-SDK" target="_blank" rel="noreferrer" className="api-external-link">SDK <ExternalLink size={13} /></a>
       </section>
 
-      {!manifest?.sandbox_ready && (
+      {!status?.sandbox_ready && (
         <div className="api-credentials-note"><ShieldCheck size={15} /><span>Set PayPal sandbox client credentials on the backend. They stay server-side and are never shown in this page.</span></div>
       )}
 
       <div className="api-lab-grid">
         <section className="api-contract-panel">
-          <div className="api-panel-heading"><div><span>CONTEXT MANIFEST</span><h2>PayPal contracts</h2></div><span className="manifest-file">.context-plugins/paypal.json</span></div>
-          <p className="api-panel-copy">The APIMatic Context Plugin manifest is the source for these routes and request fields. DropBack’s backend bridge sends the corresponding requests to PayPal Sandbox; the merchant claim flow refunds only after approval.</p>
+          <div className="api-panel-heading"><div><span>PAYPAL SERVER SDK</span><h2>Operations DropBack uses</h2></div><span className="manifest-file">app/services/paypal.py</span></div>
+          <p className="api-panel-copy">Requests are built with the SDK’s typed models (<code>OrderRequest</code>, <code>PurchaseUnitRequest</code>, <code>RefundRequest</code>, <code>Money</code>). Refunds send a <code>PayPal-Request-Id</code> so a retry can never pay twice.</p>
           <div className="api-contract-list">
-            {contracts.map(([name, contract]) => (
-              <div className="api-contract-row" key={name}>
-                <span className={`api-method method-${String(contract.method || 'get').toLowerCase()}`}>{contract.method}</span>
-                <div><b>{name.replaceAll('_', ' ')}</b><code>{contract.path}</code></div>
+            {(status?.operations || []).map(op => (
+              <div className="api-contract-row" key={op.sdk_call} title={op.used_for}>
+                <span className={`api-method method-${op.method.toLowerCase()}`}>{op.method}</span>
+                <div><b style={{ textTransform: 'none', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{op.sdk_call}</b><code>{op.path}</code></div>
                 <Check size={15} />
               </div>
             ))}
-            {!contracts.length && <div className="api-empty">Loading the manifest…</div>}
+            {!status && <div className="api-empty">Loading…</div>}
           </div>
-          <div className="api-credential-foot"><ShieldCheck size={15} /><span>OAuth credentials are loaded by the backend. No keys are exposed to the browser.</span></div>
+
+          <div className="api-panel-heading" style={{ marginTop: 18 }}><div><span>MODEL CONTEXT PROTOCOL</span><h2>Connect an AI agent</h2></div><Plug size={16} /></div>
+          <div className="api-contract-list">
+            <div className="api-contract-row">
+              <span className={`api-method ${status?.mcp.enabled ? 'method-get' : 'method-delete'}`}>{status?.mcp.enabled ? 'ON' : 'OFF'}</span>
+              <div><b style={{ textTransform: 'none' }}>DropBack MCP server</b><code>{window.location.protocol}//{window.location.hostname}:8000{status?.mcp.path || '/mcp/'}</code></div>
+            </div>
+          </div>
+          <p className="api-panel-copy" style={{ overflowWrap: 'anywhere' }}>
+            {status?.mcp.enabled
+              ? <>Read-only tools: {status.mcp.tools.join(', ')}. Clients send <code>{status.mcp.auth}</code>. Refunds stay a merchant click.</>
+              : <>Set <code>MCP_API_TOKEN</code> in <code>.env</code> and restart the API to enable it.</>}
+          </p>
+          <div className="api-contract-list">
+            <div className="api-contract-row">
+              <span className={`api-method ${status?.apimatic_context_plugin.configured_in_repo ? 'method-get' : 'method-delete'}`}>DEV</span>
+              <div><b style={{ textTransform: 'none' }}>APIMatic Context Plugin</b><code>{status?.apimatic_context_plugin.url}</code></div>
+            </div>
+          </div>
+          <p className="api-panel-copy" style={{ overflowWrap: 'anywhere' }}>{status?.apimatic_context_plugin.purpose} Registered in the repo’s <code>.mcp.json</code>.</p>
         </section>
 
         <section className="api-runner-panel">
-          <div className="api-panel-heading"><div><span>MCP TOOL RUNNER</span><h2>Make a sandbox call</h2></div><span className="api-live-tag"><i /> SANDBOX</span></div>
+          <div className="api-panel-heading"><div><span>SDK TOOL RUNNER</span><h2>Make a sandbox call</h2></div><span className="api-live-tag"><i /> SANDBOX</span></div>
           <div className="api-tool-list">
-            {TOOLS.map(tool => (
-              <button key={tool.name} type="button" className={`api-tool-option ${selectedTool === tool.name ? 'selected' : ''}`} onClick={() => { setSelectedTool(tool.name); setError('') }}>
-                <span><b>{tool.label}</b><small>{tool.description}</small></span>
+            {tools.map(tool => (
+              <button key={tool.name} type="button" className={`api-tool-option ${selectedTool === tool.name ? 'selected' : ''}`} onClick={() => selectTool(tool.name)}>
+                <span><b>{TOOL_UI[tool.name]?.label || tool.name}</b><small>{tool.description}{tool.available_over_mcp ? ' · also on MCP' : ''}</small></span>
                 {selectedTool === tool.name && <Check size={15} />}
               </button>
             ))}
           </div>
 
-          {sandboxOrders.length > 0 && (selected.kind === 'order' || selected.kind === 'capture' || selected.kind === 'refund') && (
+          {sandboxOrders.length > 0 && kind !== 'health' && (
             <label className="api-field">Use a recent sandbox order
               <select className="mcp-tool-select" value={sandboxOrders.find(order => order.order_id === orderId)?.order_id || ''} onChange={event => {
-                const order = sandboxOrders.find(item => item.order_id === event.target.value)
-                if (order) { setOrderId(order.order_id); setCaptureId(order.capture_id || '') }
+                const picked = sandboxOrders.find(item => item.order_id === event.target.value)
+                if (picked) { setOrderId(picked.order_id); setCaptureId(picked.capture_id || '') }
               }}>
                 <option value="">Choose an order</option>
                 {sandboxOrders.map(order => <option key={order.order_id} value={order.order_id}>{order.buyer_name || 'Buyer'} · {order.item_name} · {order.order_id}</option>)}
@@ -184,20 +200,19 @@ export default function APIMaticPage({ toast }: { toast?: (t: { message: string;
             </label>
           )}
 
-          {selected.kind === 'order' && <label className="api-field">PayPal order ID<input value={orderId} onChange={event => setOrderId(event.target.value)} placeholder="Order ID from a sandbox checkout" /></label>}
-          {(selected.kind === 'capture' || selected.kind === 'refund') && <label className="api-field">PayPal capture ID<input value={captureId} onChange={event => setCaptureId(event.target.value)} placeholder="Capture ID from a completed sandbox payment" /></label>}
-          {selected.kind === 'refund' && <div className="api-refund-fields">
-            <label className="api-field">Refund amount<input type="number" min="0.01" step="0.01" value={refundAmount} onChange={event => setRefundAmount(event.target.value)} placeholder="Enter amount to refund" /></label>
-            <label className="api-field">Currency<input value={refundCurrency} onChange={event => setRefundCurrency(event.target.value.toUpperCase())} maxLength={3} /></label>
+          {kind === 'order' && <label className="api-field">PayPal order ID<input value={orderId} onChange={event => setOrderId(event.target.value)} placeholder="Order ID from a sandbox checkout" /></label>}
+          {(kind === 'capture' || kind === 'refund') && <label className="api-field">PayPal capture ID<input value={captureId} onChange={event => setCaptureId(event.target.value)} placeholder="Capture ID from a completed sandbox payment" /></label>}
+          {kind === 'refund' && <div className="api-refund-fields">
+            <label className="api-field">Refund amount (USD){selectedOrder ? ` · up to ${money(selectedOrder.refundable_balance)}` : ''}<input type="number" min="0.01" step="0.01" value={refundAmount} onChange={event => setRefundAmount(event.target.value)} placeholder="Enter amount to refund" /></label>
             <label className="api-field api-note-field">Note to payer<input value={noteToPayer} onChange={event => setNoteToPayer(event.target.value)} maxLength={255} /></label>
-            <div className="api-refund-warning"><AlertCircle size={14} /> This sends a real refund in your PayPal sandbox account.</div>
+            <div className="api-refund-warning"><AlertCircle size={14} /> This sends a real refund in your PayPal sandbox account. Each new refund gets its own idempotency key.</div>
           </div>}
 
-          {sandboxOrders.length === 0 && selected.kind !== 'health' && <div className="api-empty-order">No PayPal sandbox orders yet. Complete a sandbox checkout to load real order and capture IDs here.</div>}
+          {sandboxOrders.length === 0 && kind !== 'health' && <div className="api-empty-order">No PayPal sandbox orders yet. Complete a sandbox checkout to load real order and capture IDs here.</div>}
           {error && <div className="api-error"><AlertCircle size={15} />{error}</div>}
           <div className="api-run-actions">
             <button type="button" className="button button-dark" onClick={handleRunTool} disabled={executing || loading} data-testid="mcp-execute-btn">
-              {executing ? <><LoaderCircle size={15} className="spin" /> Running…</> : <><Play size={14} /> {selected.kind === 'refund' ? 'Issue sandbox refund' : 'Run tool'}</>}
+              {executing ? <><LoaderCircle size={15} className="spin" /> Running…</> : <><Play size={14} /> {kind === 'refund' ? 'Issue sandbox refund' : 'Run tool'}</>}
             </button>
             {latency !== null && <span>{latency} ms</span>}
           </div>

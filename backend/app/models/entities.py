@@ -89,6 +89,10 @@ class PriceDrop(Base):
     source: Mapped[str] = mapped_column(String(24), default="manual")
     detected_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, index=True)
     processed: Mapped[bool] = mapped_column(Boolean, default=False)
+    # The retailer and listing behind this observation, kept with the evidence so a
+    # later price check on the same product cannot change what a claim cites.
+    offer_merchant: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    offer_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     product: Mapped[Product] = relationship()
 
 
@@ -125,7 +129,8 @@ class Refund(Base):
     __tablename__ = "refunds"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     paypal_refund_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
-    decision_id: Mapped[str] = mapped_column(ForeignKey("refund_decisions.id"), unique=True, index=True)
+    # Null for a manual refund issued from the PayPal API lab / MCP tool.
+    decision_id: Mapped[str | None] = mapped_column(ForeignKey("refund_decisions.id"), unique=True, index=True, nullable=True)
     capture_id: Mapped[str] = mapped_column(ForeignKey("captures.id"))
     amount: Mapped[float] = mapped_column(Numeric(10, 2))
     currency: Mapped[str] = mapped_column(String(3), default="USD")

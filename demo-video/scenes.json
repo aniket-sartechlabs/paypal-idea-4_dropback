@@ -81,8 +81,8 @@
     {
       "id": "08_apimatic",
       "duration": 12,
-      "on_screen": "APIMatic PayPal API contracts · Orders v2 and Payments v2",
-      "narration": "APIMatic's PayPal context manifest documents the API contracts used for the real sandbox order, capture, and refund calls.",
+      "on_screen": "PayPal Server SDK by APIMatic · Orders v2 and Payments v2",
+      "narration": "Every PayPal call, from order to capture to refund, runs through the APIMatic-generated PayPal Server SDK, and DropBack exposes read-only tools over MCP.",
       "actions": [
         { "action": "goto", "url": "/apimatic" },
         { "action": "highlight", "target": "apimatic-page" }

@@ -62,9 +62,7 @@ export default function DecisionsPage({
       if (kind === 'approve') {
         toast({
           kind: 'success',
-          message: result.settlement_mode === 'demo_ledger'
-            ? `Demo case approved. ${money(result.refund_amount, result.currency)} recorded locally; no money was moved.`
-            : `Claim approved. ${money(result.refund_amount, result.currency)} refund status: ${result.refund_status || 'processing'}.`,
+          message: `Claim approved. ${money(result.refund_amount, result.currency)} refund status: ${result.refund_status || 'processing'}.`,
         })
       } else {
         toast({ kind: 'info', message: 'Claim rejected.' })
@@ -200,7 +198,7 @@ export default function DecisionsPage({
           }
           if (p.data.status === 'APPROVED') {
             return <Link className="buyer-outcome-link" to={`/portal/${encodeURIComponent(p.data.order_id)}`} target="_blank">
-              <span className="decision-status approved">{p.data.settlement_mode === 'demo_ledger' ? 'DEMO APPROVED' : 'REFUNDED'}</span><ExternalLink size={13} />
+              <span className="decision-status approved">REFUNDED</span><ExternalLink size={13} />
             </Link>
           }
           return <span className="grid-muted">{p.data.status}</span>
@@ -417,15 +415,11 @@ export function DecisionAnalysisModal({
   const refundAmt = fin?.proposed_refund ?? decision.refund_amount
   const netSavings = fin?.net_savings ?? decision.estimated_savings
   const evidenceLabel = decision.evidence_source === 'demo_offer_fixture' ? 'Saved demo offer' : 'Live Channel3 offer'
-  const demoSettlement = decision.settlement_mode === 'demo_ledger'
-  const demoDraft = `Hi ${decision.buyer_name || 'there'}, thank you for reaching out under our 14-day price guarantee. We’ve recorded a demo settlement of ${money(refundAmt, decision.currency)} in the local prototype. No PayPal refund was sent and no funds moved.`
-  const paypalDraft = `Hi ${decision.buyer_name || 'there'}, thank you for shopping with us! We appreciate you reaching out under our 14-day price guarantee. We've credited ${money(refundAmt, decision.currency)} directly to your PayPal account to match the competitor price, so you can keep enjoying your purchase without returning it.`
+  const paypalDraft = `Hi ${decision.buyer_name || 'there'}, thank you for shopping with us! We appreciate you reaching out under our price guarantee. We've credited ${money(refundAmt, decision.currency)} directly to your PayPal account to match the competitor price, so you can keep enjoying your purchase without returning it.`
 
   const [settleAmount, setSettleAmount] = useState(String(refundAmt))
   const [draftedMessage, setDraftedMessage] = useState(
-    decision.merchant_message || (demoSettlement
-      ? demoDraft
-      : decision.ai_drafted_message || report?.drafted_customer_message || paypalDraft)
+    decision.merchant_message || decision.ai_drafted_message || report?.drafted_customer_message || paypalDraft
   )
 
   return (
@@ -467,7 +461,7 @@ export function DecisionAnalysisModal({
                   {money(decision.competitor_price || (decision.purchase_price - decision.refund_amount))}
                 </span>
                 <span style={{ fontSize: 12, color: '#64748b' }}>
-                  (Buyer paid {money(decision.purchase_price)} · Delta: <b style={{ color: '#dc2626' }}>−{money(decision.refund_amount)}</b>)
+                  (Buyer paid {money(decision.purchase_price)}{(decision.quantity || 1) > 1 ? ` × ${decision.quantity}` : ''} · Delta: <b style={{ color: '#dc2626' }}>−{money(decision.refund_amount)}</b>)
                 </span>
               </div>
             </div>
@@ -508,7 +502,7 @@ export function DecisionAnalysisModal({
               <div className="metric-score">
                 <span className="score-num refund-num">{money(refundAmt, decision.currency)}</span>
               </div>
-              <span className="card-hint">{demoSettlement ? 'Recorded locally in the demo ledger' : 'PayPal capture refund after approval'}</span>
+              <span className="card-hint">PayPal capture refund after approval</span>
             </div>
 
             <div className="modal-metric-card highlight-card">
@@ -578,9 +572,9 @@ export function DecisionAnalysisModal({
           {/* SETTLEMENT AMOUNT ADJUSTMENT */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}>
             <div>
-              <b style={{ fontSize: 12, color: '#1e293b' }}>{demoSettlement ? 'Demo settlement amount:' : 'PayPal refund amount:'}</b>
+              <b style={{ fontSize: 12, color: '#1e293b' }}>PayPal refund amount:</b>
               <p style={{ margin: '2px 0 0', fontSize: 11, color: '#64748b' }}>
-                {demoSettlement ? 'This sample order records a local demo credit; no money moves.' : 'A refund is sent to the buyer’s PayPal account after approval.'}
+                A refund is sent to the buyer’s PayPal account after approval.
               </p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -599,7 +593,7 @@ export function DecisionAnalysisModal({
         <div className="analysis-modal-footer">
           <div className="footer-note">
             <LockKeyhole size={14} />
-            <span>{demoSettlement ? 'Sample order: approval updates the local demo ledger only.' : 'Merchant approval is required before the PayPal refund is sent.'}</span>
+            <span>Merchant approval is required before the PayPal refund is sent.</span>
           </div>
           <div className="footer-actions">
             <button type="button" className="button button-light" onClick={onClose}>
@@ -632,7 +626,7 @@ export function DecisionAnalysisModal({
                   {working === decision.id ? (
                     <><LoaderCircle size={15} className="spin" /> Processing…</>
                   ) : (
-                    <><Check size={15} /> {demoSettlement ? 'Approve demo settlement' : 'Approve & issue PayPal refund'}</>
+                    <><Check size={15} /> Approve & issue PayPal refund</>
                   )}
                 </button>
               </>

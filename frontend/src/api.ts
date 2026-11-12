@@ -1,4 +1,4 @@
-import type { APIMaticStatus, Decision, Order, PriceCheckResult, PriceDrop, Product, RefundRecord, Stats } from './types'
+import type { PayPalToolsStatus, Decision, Order, PriceCheckResult, PriceDrop, Product, RefundRecord, Stats } from './types'
 
 export class ApiError extends Error {
   status: number
@@ -26,9 +26,18 @@ export const getDecisions = () => api<Decision[]>('/agent/decisions')
 export const getRefunds = () => api<RefundRecord[]>('/refunds')
 export const getStats = () => api<Stats>('/dashboard/stats')
 export const getSettings = () => api<Record<string, unknown>>('/settings')
-export const getApimaticStatus = () => api<APIMaticStatus>('/apimatic/status')
-export const invokeApimaticTool = (tool: string, args: Record<string, any> = {}) =>
-  api<any>('/apimatic/mcp/invoke', { method: 'POST', body: JSON.stringify({ tool, arguments: args }) })
+export const getPayPalToolsStatus = () => api<PayPalToolsStatus>('/paypal-tools/status')
+export const invokePayPalTool = (tool: string, args: Record<string, any> = {}, idempotencyKey?: string) =>
+  api<any>('/paypal-tools/invoke', {
+    method: 'POST',
+    body: JSON.stringify({ tool, arguments: args }),
+    headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+  })
+export type BuyerOrderSummary = { id: string; paypal_order_id: string | null; status: string; item_name: string; total_amount: number; currency: string; created_at: string | null }
+export const buyerLogin = (orderId: string, email: string) =>
+  api<{ authenticated: boolean; order: BuyerOrderSummary }>('/buyer/login', { method: 'POST', body: JSON.stringify({ order_id: orderId, email }) })
+export const getBuyerOrders = () => api<{ authenticated: boolean; orders: BuyerOrderSummary[] }>('/buyer/orders')
+export const buyerLogout = () => api('/buyer/logout', { method: 'POST' })
 export const lookupOrder = (key: string) => api<any>(`/orders/lookup/${encodeURIComponent(key)}`)
 export const checkPriceForClaim = (payload: { order_id?: string; product_id?: string }) =>
   api<PriceCheckResult>('/claims/check-price', { method: 'POST', body: JSON.stringify(payload) })

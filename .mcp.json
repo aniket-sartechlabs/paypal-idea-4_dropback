@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "apimatic-context": {
+      "type": "http",
+      "url": "https://chatbotapi.apimatic.io/mcp/plugins"
+    },
+    "dropback": {
+      "type": "http",
+      "url": "http://127.0.0.1:8000/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${MCP_API_TOKEN}"
+      }
+    }
+  }
+}

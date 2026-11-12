@@ -5,7 +5,7 @@ import {
   ExternalLink, LoaderCircle, MessageSquare, RefreshCw,
   ShieldCheck, ShoppingBag, Sparkles, TrendingDown, WalletCards,
 } from 'lucide-react'
-import { checkPriceForClaim, lookupOrder, money, submitClaim } from './api'
+import { ApiError, buyerLogin, buyerLogout, checkPriceForClaim, getBuyerOrders, lookupOrder, money, submitClaim, type BuyerOrderSummary } from './api'
 import type { Decision, PriceCheckResult } from './types'
 
 export default function CustomerPortalPage({ toast }: { toast?: (t: { message: string; kind: 'success' | 'error' | 'info' }) => void }) {
@@ -14,6 +14,9 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
   const navigate = useNavigate()
 
   const [lookupKey, setLookupKey] = useState(orderId || '')
+  const [buyerEmail, setBuyerEmail] = useState('')
+  const [myOrders, setMyOrders] = useState<BuyerOrderSummary[]>([])
+  const [needsSignIn, setNeedsSignIn] = useState(false)
   const [loading, setLoading] = useState(false)
   const [order, setOrder] = useState<any | null>(null)
   const [error, setError] = useState('')
@@ -25,6 +28,18 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
 
   const activeClaim: Decision | null = submittedClaim || (order?.claim as Decision) || null
   const scenarioDay = new URLSearchParams(location.search).get('scenario_day')
+  const windowDays: number = order?.protection_window_days || 14
+
+  const refreshMyOrders = async () => {
+    try {
+      const data = await getBuyerOrders()
+      setMyOrders(data.orders)
+    } catch {
+      setMyOrders([])
+    }
+  }
+
+  useEffect(() => { void refreshMyOrders() }, [orderId])
 
   const doLookup = async (key: string) => {
     if (!key.trim()) return
@@ -35,12 +50,19 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
     try {
       const data = await lookupOrder(key.trim())
       setOrder(data)
+      setNeedsSignIn(false)
       if (data.claim) {
         setSubmittedClaim(data.claim)
       }
     } catch (err: any) {
       setOrder(null)
-      setError(err?.message || `Order '${key}' could not be found. Please check your order ID.`)
+      if (err instanceof ApiError && (err.status === 403 || err.status === 401)) {
+        setNeedsSignIn(true)
+        setLookupKey(key.trim())
+        setError('')
+      } else {
+        setError(err?.message || `Order '${key}' could not be found. Please check your order ID.`)
+      }
     } finally {
       setLoading(false)
     }
@@ -79,12 +101,31 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
     return () => { alive = false; window.clearInterval(timer) }
   }, [order?.id, activeClaim?.status, toast])
 
-  const onSubmitLookup = (e: FormEvent) => {
+  const onSubmitSignIn = async (e: FormEvent) => {
     e.preventDefault()
-    if (lookupKey) {
-      navigate(`/portal/${encodeURIComponent(lookupKey)}`)
-      void doLookup(lookupKey)
+    if (!lookupKey.trim() || !buyerEmail.trim()) return
+    setLoading(true)
+    setError('')
+    try {
+      const result = await buyerLogin(lookupKey.trim(), buyerEmail.trim())
+      setNeedsSignIn(false)
+      await refreshMyOrders()
+      navigate(`/portal/${encodeURIComponent(result.order.id)}`)
+      await doLookup(result.order.id)
+    } catch (err: any) {
+      setError(err?.message || 'We could not sign you in. Check the order ID and the email on your PayPal account.')
+    } finally {
+      setLoading(false)
     }
+  }
+
+  const onSignOut = async () => {
+    await buyerLogout().catch(() => undefined)
+    setMyOrders([])
+    setOrder(null)
+    setSubmittedClaim(null)
+    setPriceResult(null)
+    navigate('/portal')
   }
 
   const handlePriceCheck = async () => {
@@ -99,7 +140,7 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
       setPriceResult(result)
       if (result.price_drop_detected) {
         setCustomerNotes(
-          `Hi Holloway team! I noticed the price for the ${result.product_name || 'item'} dropped to ${money(result.competitor_price || 0)} at ${result.competitor_name || 'authorized retailer'}. Under DropBack's 14-day price guarantee, I'd like to claim the ${money(result.drop_amount || 0)} price difference refund rather than having to repack and ship the physical box back!`
+          `Hi Holloway team! I noticed the price for the ${result.product_name || 'item'} dropped to ${money(result.competitor_price || 0)} at ${result.competitor_name || 'authorized retailer'}. Under DropBack's ${result.protection_window_days || windowDays}-day price guarantee, I'd like to claim the ${money(result.drop_amount || 0)} price difference refund rather than having to repack and ship the physical box back!`
         )
       }
     } catch (err: any) {
@@ -154,37 +195,68 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
             </div>
             <h1>Your orders & price protection</h1>
             <p>
-              If the price drops within 14 days, request the difference from Holloway Goods. A merchant reviews the evidence before any PayPal refund is sent.
+              If the price drops within {windowDays} days, request the difference from Holloway Goods. A merchant reviews the evidence before any PayPal refund is sent.
             </p>
-            {scenarioDay && <span className="scenario-day-label">Demo timeline · Day {scenarioDay} of 14 · real Sandbox payment</span>}
+            {scenarioDay && <span className="scenario-day-label">Demo timeline · Day {scenarioDay} of {windowDays} · real Sandbox payment</span>}
           </div>
           <div className="portal-badge">
-            <b>14</b>
+            <b>{windowDays}</b>
             <span>DAYS GUARANTEE</span>
           </div>
         </section>
 
-        <section className="order-lookup-card">
+        {myOrders.length > 0 && (
+          <section className="order-lookup-card" data-testid="buyer-orders">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <b style={{ fontSize: 14, color: '#1e293b' }}>Your orders</b>
+                <p style={{ margin: '3px 0 0', fontSize: 12, color: '#64748b' }}>Orders placed or signed in from this browser.</p>
+              </div>
+              <button type="button" className="button button-light" onClick={() => void onSignOut()}>Sign out</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {myOrders.map(item => (
+                <Link key={item.id} to={`/portal/${encodeURIComponent(item.id)}`} className="buyer-order-link" style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '8px 10px', borderRadius: 6, border: '1px solid #e2e8f0', fontSize: 12, color: '#1e293b', textDecoration: 'none', background: item.id === order?.id ? '#f1f5f9' : '#fff' }}>
+                  <span><b>{item.item_name}</b> · PayPal order {item.paypal_order_id || item.id.slice(0, 10)}</span>
+                  <span>{money(item.total_amount, item.currency)}</span>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {(!order || needsSignIn) && (
+        <section className="order-lookup-card" data-testid="buyer-sign-in">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <b style={{ fontSize: 14, color: '#1e293b' }}>Order lookup</b>
+              <b style={{ fontSize: 14, color: '#1e293b' }}>{needsSignIn ? 'Sign in to view this order' : 'Find your order'}</b>
               <p style={{ margin: '3px 0 0', fontSize: 12, color: '#64748b' }}>
-                Find a PayPal purchase to check its DropBack price guarantee.
+                Enter the order ID from your PayPal receipt and the email address on your PayPal account.
               </p>
             </div>
           </div>
 
-          <form className="order-lookup-form" onSubmit={onSubmitLookup}>
+          <form className="order-lookup-form" onSubmit={onSubmitSignIn}>
             <input
               type="text"
               className="order-lookup-input"
-              placeholder="Enter your order ID or PayPal order ID"
+              placeholder="Order ID or PayPal order ID"
               value={lookupKey}
               onChange={e => setLookupKey(e.target.value)}
+              autoComplete="off"
+              required
+            />
+            <input
+              type="email"
+              className="order-lookup-input"
+              placeholder="PayPal account email"
+              value={buyerEmail}
+              onChange={e => setBuyerEmail(e.target.value)}
+              autoComplete="email"
               required
             />
             <button type="submit" className="button button-dark" disabled={loading} style={{ minWidth: 120 }}>
-              {loading ? <><LoaderCircle size={15} className="spin" /> Searching…</> : <>Find Order <ArrowRight size={15} /></>}
+              {loading ? <><LoaderCircle size={15} className="spin" /> Checking…</> : <>Open order <ArrowRight size={15} /></>}
             </button>
           </form>
 
@@ -194,6 +266,13 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
             </div>
           )}
         </section>
+        )}
+
+        {error && order && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#dc2626', fontSize: 12, background: '#fef2f2', padding: '10px 14px', borderRadius: 6 }}>
+            <AlertCircle size={16} /> {error}
+          </div>
+        )}
 
         {order && (
           <div className="journey-steps" aria-label="Price protection steps">
@@ -214,7 +293,7 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                   <span style={{ fontSize: 11, fontWeight: 700, color: '#047857', background: '#ecfdf5', padding: '2px 8px', borderRadius: 12, border: '1px solid #a7f3d0' }}>
                     <ShieldCheck size={12} style={{ display: 'inline', marginRight: 4 }} />
-                    14-Day DropBack Protection Active
+                    {order.protection_active === false ? `${windowDays}-day protection window ended` : `${windowDays}-Day DropBack Protection Active`}
                   </span>
                   <span style={{ fontSize: 11, color: '#64748b' }}>
                     Ordered on {new Date(order.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -247,23 +326,17 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
                     </div>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                        <h3>{activeClaim.settlement_mode === 'demo_ledger'
-                          ? 'Merchant decision approved · demo ledger'
-                          : activeClaim.refund_status === 'COMPLETED'
+                        <h3>{activeClaim.refund_status === 'COMPLETED'
                             ? 'Refund credited to PayPal'
                             : 'Merchant approved your request'}</h3>
-                        <span className={`portal-credit-badge ${activeClaim.settlement_mode === 'demo_ledger' ? 'demo' : ''}`}>
-                          {activeClaim.settlement_mode === 'demo_ledger'
-                            ? `${money(activeClaim.refund_amount, activeClaim.currency)} · DEMO`
-                            : activeClaim.refund_status === 'COMPLETED'
+                        <span className="portal-credit-badge">
+                          {activeClaim.refund_status === 'COMPLETED'
                               ? `+${money(activeClaim.refund_amount, activeClaim.currency)} CREDITED`
                               : `REFUND ${activeClaim.refund_status || 'PROCESSING'}`}
                         </span>
                       </div>
                       <p>
-                        {activeClaim.settlement_mode === 'demo_ledger'
-                          ? <>This sample case was approved for <b>{money(activeClaim.refund_amount, activeClaim.currency)}</b>. It is recorded locally for the demo; no PayPal funds were moved.</>
-                          : activeClaim.refund_status === 'COMPLETED'
+                        {activeClaim.refund_status === 'COMPLETED'
                             ? <>Holloway credited <b>{money(activeClaim.refund_amount, activeClaim.currency)}</b> to your PayPal account. You keep your item with no return hassles.</>
                             : <>Holloway approved <b>{money(activeClaim.refund_amount, activeClaim.currency)}</b>. PayPal is still processing the refund.</>}
                       </p>
@@ -279,9 +352,7 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
                       )}
                       <div style={{ marginTop: 10, fontSize: 11, color: '#047857', display: 'flex', alignItems: 'center', gap: 6 }}>
                         <WalletCards size={13} />
-                        <span>{activeClaim.settlement_mode === 'demo_ledger'
-                          ? 'Sample order · local demo ledger'
-                          : `PayPal Sandbox · ${activeClaim.paypal_refund_id || 'refund reference pending'}`}</span>
+                        <span>{`PayPal ${activeClaim.settlement_mode === 'paypal_live' ? '' : 'Sandbox '}· ${activeClaim.paypal_refund_id || 'refund reference pending'}`}</span>
                       </div>
                     </div>
                   </>
@@ -298,7 +369,7 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
                         </span>
                       </div>
                       <p>
-                        Our Actuarial AI Agent evaluated your claim against Channel3's competitor price.
+                        DropBack checked your request against Channel3's live offer and estimated the merchant's return costs.
                         The recommended difference settlement of <b>{money(activeClaim.refund_amount, activeClaim.currency)}</b> is currently in the merchant's review queue.
                       </p>
                       {activeClaim.customer_notes && (

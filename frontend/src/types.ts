@@ -22,7 +22,7 @@ export type Order = {
   id: string
   paypal_order_id?: string | null
   status: string
-  source: 'paypal' | 'sample'
+  source: 'paypal'
   buyer_name: string
   buyer_email: string
   total_amount: number
@@ -89,7 +89,8 @@ export type Decision = {
   reasoning: string
   analysis_report?: AnalysisReport
   evidence_source?: 'channel3_live' | 'demo_offer_fixture' | string
-  settlement_mode?: 'paypal_sandbox' | 'demo_ledger' | string
+  settlement_mode?: 'paypal_sandbox' | 'paypal_live' | string
+  quantity?: number
   refund_status?: string | null
   paypal_refund_id?: string | null
   customer_claim?: boolean
@@ -120,18 +121,16 @@ export type RefundRecord = {
   completed_at?: string | null
 }
 
-export type APIMaticStatus = {
-  apimatic_enabled: boolean
-  version: string
-  plugin_name: string
+export type PayPalToolsStatus = {
+  sdk_package: string
+  sdk_version: string
+  sdk_generator: string
   environment: string
   sandbox_ready: boolean
-  tools_count: number
-  tools: { name: string; description: string; parameters: any }[]
-  schemas: Record<string, any>
-  context_plugin_name?: string
-  contract_source?: string
-  manifest_loaded?: boolean
+  operations: { sdk_call: string; method: string; path: string; used_for: string }[]
+  tools: { name: string; description: string; parameters: any; available_over_mcp: boolean }[]
+  mcp: { enabled: boolean; path: string; transport: string; auth: string; tools: string[] }
+  apimatic_context_plugin: { url: string; configured_in_repo: boolean; purpose: string }
 }
 
 export type PriceCheckResult = {
@@ -148,6 +147,7 @@ export type PriceCheckResult = {
   drop_percentage?: number
   price_drop_detected?: boolean
   protection_active?: boolean
+  protection_window_days?: number
   best_offer?: { price: number; merchant: string; url?: string }
   all_offers?: { price: number; merchant: string; url?: string }[]
   message?: string
@@ -163,7 +163,6 @@ export type Stats = {
   estimated_savings: number
   orders_total: number
   decisions_total: number
-  sample_orders: number
   paypal_configured: boolean
   channel3_configured: boolean
 }

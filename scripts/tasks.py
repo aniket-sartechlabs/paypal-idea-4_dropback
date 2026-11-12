@@ -29,7 +29,7 @@ def py() -> str:
 def setup() -> int:
     print("+ Setting up Python and Node dependencies...")
     return (
-        run(py(), "-m", "pip", "install", "-r", "backend/requirements.txt")
+        run(py(), "-m", "pip", "install", "-r", "backend/requirements-dev.txt")
         or run("npm", "install", cwd=ROOT / "frontend")
     )
 

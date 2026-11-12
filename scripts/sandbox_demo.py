@@ -447,7 +447,7 @@ async def run_browser(settings: Settings, channel3_signal: dict[str, Any], headl
             await page.get_by_text(re.compile("refund credited to PayPal|merchant approved your request", re.I)).wait_for(timeout=30000)
             await page.wait_for_timeout(1800)
 
-            stage_start("08_apimatic", "APIMatic PayPal API contracts", "Orders v2, capture, and idempotent Payments v2 refunds are documented in the context manifest.")
+            stage_start("08_apimatic", "PayPal Server SDK by APIMatic", "Orders v2, capture, and idempotent Payments v2 refunds all run through the APIMatic-generated SDK.")
             await page.goto(f"{FRONTEND}/login?next=%2Fapimatic", wait_until="domcontentloaded")
             # The merchant cookie survives this navigation, so the login route sends the user straight back.
             if await page.locator('input[type="email"]').count():

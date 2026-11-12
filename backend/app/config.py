@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     merchant_email: str = ""
     merchant_password: str = ""
     session_cookie_secure: bool = False
+    # Bearer token required by the DropBack MCP endpoint (/mcp). Leave empty to disable it.
+    mcp_api_token: str = ""
 
     @property
     def is_production(self) -> bool:
