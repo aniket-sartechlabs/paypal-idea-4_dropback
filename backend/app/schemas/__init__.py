@@ -106,3 +106,7 @@ class ClaimResolveInput(BaseModel):
 class ToolInvokeInput(BaseModel):
     tool: str
     arguments: dict = Field(default_factory=dict)
+
+
+class LookupInput(BaseModel):
+    url: str = Field(min_length=10, max_length=1000, pattern=r"^https?://")

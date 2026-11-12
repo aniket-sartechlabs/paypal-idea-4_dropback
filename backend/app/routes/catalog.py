@@ -10,7 +10,7 @@ from sqlalchemy.orm import joinedload
 
 from app.deps import Db
 from app.models.entities import Decision, Order, PriceDrop, Product
-from app.schemas import PriceUpdate, ProductInput
+from app.schemas import LookupInput, PriceUpdate, ProductInput
 from app.security import Merchant
 from app.serializers import add_action, as_decimal, decision_dict, price_drop_dict, product_dict, store_product_dict
 from app.services import claims
@@ -33,11 +33,23 @@ async def clear_channel3_link(product: Product) -> None:
 
 
 async def ensure_subscription(product: Product) -> None:
+    """Watch a linked product two ways: offer-change webhooks (product subscription) and price history (price tracking)."""
     if product.channel3_product_id and not product.channel3_subscription_id:
         try:
             product.channel3_subscription_id = await channel3.subscribe(product.channel3_product_id, product.merchant_domain)
         except Channel3Error as exc:
             log.warning("Channel3 subscription setup failed for product %s: %s", product.id, exc)
+        try:
+            await channel3.start_tracking(product.channel3_product_id)
+        except Channel3Error as exc:
+            log.warning("Channel3 price tracking could not start for product %s: %s", product.id, exc)
+
+
+@router.get("/store/info")
+def store_info(db: Db):
+    """Public store facts for the buyer portal: the merchant's name and protection window."""
+    row = claims.get_settings_row(db)
+    return {"merchant_name": row.merchant_name, "protection_window_days": row.price_protection_window_days}
 
 
 @router.get("/store/products")
@@ -150,6 +162,26 @@ async def search_channel3_products(_: Merchant, query: str = "", limit: int = 6)
         raise HTTPException(exc.status_code, str(exc)) from exc
 
 
+@router.post("/channel3/lookup")
+async def lookup_channel3_product(body: LookupInput, _: Merchant):
+    """Paste a product page URL (your store or any retailer); Channel3 resolves the exact product."""
+    try:
+        return await channel3.lookup(body.url.strip())
+    except Channel3Error as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@router.get("/products/{product_id}/market")
+async def product_market(product_id: str, db: Db, _: Merchant):
+    """Channel3 price history and the current best retailer for a linked product."""
+    product = db.get(Product, product_id)
+    if not product:
+        raise HTTPException(404, "Product not found.")
+    if not product.channel3_product_id:
+        raise HTTPException(409, "Link this product to Channel3 first.")
+    return await channel3.market_context(product.channel3_product_id, product.competitor_name)
+
+
 @router.get("/price-drops")
 def list_price_drops(db: Db, _: Merchant):
     drops = db.scalars(select(PriceDrop).options(joinedload(PriceDrop.product)).order_by(PriceDrop.detected_at.desc()).limit(100)).all()
@@ -177,15 +209,17 @@ async def process_price_drop(drop_id: str, db: Db, _: Merchant):
     candidates = db.scalars(select(Order).options(joinedload(Order.items), joinedload(Order.capture))
                             .where(Order.status == "COMPLETED", Order.captured_at.is_not(None))).unique().all()
     created: list[str] = []
+    market = await channel3.market_context(product.channel3_product_id, drop.offer_merchant) if product.channel3_product_id else None
     for order in candidates:
         if db.scalar(select(Decision.id).where(Decision.price_drop_id == drop.id, Decision.order_id == order.id)):
             continue
         assessment = claims.assess_order(db, order, product, as_decimal(drop.new_price), settings_row, budget_left)
         if not assessment:
             continue
-        await claims.score(assessment, product, order, competitor)
+        await claims.score(assessment, product, order, competitor, market=market)
         decision = claims.build_decision(assessment, order, drop, competitor, customer_claim=False,
-                                         evidence={"price": float(drop.new_price), "merchant": competitor, "url": drop.offer_url, "source": drop.source})
+                                         evidence={"price": float(drop.new_price), "merchant": competitor, "url": drop.offer_url, "source": drop.source},
+                                         market=market)
         db.add(decision)
         db.flush()
         created.append(decision.id)

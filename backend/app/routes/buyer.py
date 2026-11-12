@@ -101,6 +101,7 @@ async def check_price_for_claim(body: CheckPriceInput, request: Request, db: Db)
     best = comparison["best_offer"]
     best_price = as_decimal(best["price"])
     window = claims.window_days_for(product, claims.get_settings_row(db))
+    market = await channel3.market_context(product.channel3_product_id or comparison.get("product_id"), best.get("merchant"))
     # Each buyer check is its own evidence row; it never changes the merchant's catalog data.
     drop = claims.record_price_drop(db, product, paid_price, best_price, "customer_claim_live", best.get("merchant"), best.get("url"), dedupe=False)
     db.commit()
@@ -116,6 +117,8 @@ async def check_price_for_claim(body: CheckPriceInput, request: Request, db: Db)
         "protection_window_days": window,
         "protection_active": claims.days_since_capture(order) <= window,
         "evidence_source": "channel3_live",
+        "market": {**market, "offers_checked": comparison.get("offer_count"),
+                   "summary": claims.market_summary(market, best_price, best.get("merchant", ""))},
     }
 
 
@@ -163,10 +166,12 @@ async def submit_customer_claim(body: ClaimSubmitInput, request: Request, db: Db
     assessment = claims.assess_order(db, order, product, as_decimal(drop.new_price), settings_row)
     if assessment is None:
         raise HTTPException(409, "This order has no captured item for that product.")
-    await claims.score(assessment, product, order, competitor, body.customer_notes)
+    market = await channel3.market_context(product.channel3_product_id, competitor)
+    await claims.score(assessment, product, order, competitor, body.customer_notes, market)
     decision = claims.build_decision(
         assessment, order, drop, competitor, customer_claim=True, customer_notes=body.customer_notes,
         evidence={"price": float(drop.new_price), "merchant": competitor, "url": drop.offer_url, "observed_at": drop.detected_at.isoformat()},
+        market=market,
     )
     drop.processed = True
     db.add(decision)

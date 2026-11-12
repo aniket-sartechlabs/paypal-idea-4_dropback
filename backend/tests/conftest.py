@@ -111,7 +111,13 @@ def fake_channel3(monkeypatch):
         return {"matched": True, "product_id": "ch3-sony", "title": product_name, "match_confidence": 0.98,
                 "best_offer": dict(offer), "all_offers": [dict(offer)], "lower_than_current": offer["price"] < local_price}
 
+    async def market_context(product_id, retailer):
+        history = {"points": [{"date": f"2026-10-{d:02d}", "price": 398.0 if d < 20 else 348.0} for d in range(1, 31)],
+                   "statistics": {"min_price": 348.0, "max_price": 398.0, "mean": 381.33, "current_price": 348.0, "current_status": "low"}}
+        return {"product_id": product_id, "history": history, "retailer": {"domain": retailer, "name": "Best Buy", "logo_url": None}}
+
     monkeypatch.setattr(channel3, "search_and_compare", search_and_compare)
+    monkeypatch.setattr(channel3, "market_context", market_context)
     return offer
 
 

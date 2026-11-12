@@ -5,8 +5,9 @@ import {
   ExternalLink, LoaderCircle, MessageSquare, RefreshCw,
   ShieldCheck, ShoppingBag, Sparkles, TrendingDown, WalletCards,
 } from 'lucide-react'
-import { ApiError, buyerLogin, buyerLogout, checkPriceForClaim, getBuyerOrders, lookupOrder, money, submitClaim, type BuyerOrderSummary } from './api'
+import { api, ApiError, buyerLogin, buyerLogout, checkPriceForClaim, getBuyerOrders, lookupOrder, money, submitClaim, type BuyerOrderSummary } from './api'
 import type { Decision, PriceCheckResult } from './types'
+import Channel3Evidence from './Channel3Evidence'
 
 export default function CustomerPortalPage({ toast }: { toast?: (t: { message: string; kind: 'success' | 'error' | 'info' }) => void }) {
   const { orderId } = useParams<{ orderId?: string }>()
@@ -19,6 +20,8 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
   const [needsSignIn, setNeedsSignIn] = useState(false)
   const [loading, setLoading] = useState(false)
   const [order, setOrder] = useState<any | null>(null)
+  const [storeName, setStoreName] = useState('the store')
+  useEffect(() => { api<{ merchant_name: string }>('/store/info').then(info => setStoreName(info.merchant_name)).catch(() => undefined) }, [])
   const [error, setError] = useState('')
   const [checkingPrice, setCheckingPrice] = useState(false)
   const [priceResult, setPriceResult] = useState<PriceCheckResult | null>(null)
@@ -140,7 +143,7 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
       setPriceResult(result)
       if (result.price_drop_detected) {
         setCustomerNotes(
-          `Hi Holloway team! I noticed the price for the ${result.product_name || 'item'} dropped to ${money(result.competitor_price || 0)} at ${result.competitor_name || 'authorized retailer'}. Under DropBack's ${result.protection_window_days || windowDays}-day price guarantee, I'd like to claim the ${money(result.drop_amount || 0)} price difference refund rather than having to repack and ship the physical box back!`
+          `Hi ${storeName} team! I noticed the price for the ${result.product_name || 'item'} dropped to ${money(result.competitor_price || 0)} at ${result.competitor_name || 'authorized retailer'}. Under DropBack's ${result.protection_window_days || windowDays}-day price guarantee, I'd like to claim the ${money(result.drop_amount || 0)} price difference refund rather than having to repack and ship the physical box back!`
         )
       }
     } catch (err: any) {
@@ -163,7 +166,7 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
         customer_notes: customerNotes,
       })
       setSubmittedClaim(claim)
-      toast?.({ kind: 'success', message: 'Price-match request sent to Holloway Goods for merchant review.' })
+      toast?.({ kind: 'success', message: `Price-match request sent to ${storeName} for merchant review.` })
     } catch (err: any) {
       setError(err?.message || 'Could not submit claim. Please try again.')
     } finally {
@@ -195,7 +198,7 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
             </div>
             <h1>Your orders & price protection</h1>
             <p>
-              If the price drops within {windowDays} days, request the difference from Holloway Goods. A merchant reviews the evidence before any PayPal refund is sent.
+              If the price drops within {windowDays} days, request the difference from {storeName}. A merchant reviews the evidence before any PayPal refund is sent.
             </p>
             {scenarioDay && <span className="scenario-day-label">Demo timeline · Day {scenarioDay} of {windowDays} · real Sandbox payment</span>}
           </div>
@@ -337,8 +340,8 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
                       </div>
                       <p>
                         {activeClaim.refund_status === 'COMPLETED'
-                            ? <>Holloway credited <b>{money(activeClaim.refund_amount, activeClaim.currency)}</b> to your PayPal account. You keep your item with no return hassles.</>
-                            : <>Holloway approved <b>{money(activeClaim.refund_amount, activeClaim.currency)}</b>. PayPal is still processing the refund.</>}
+                            ? <>{storeName} credited <b>{money(activeClaim.refund_amount, activeClaim.currency)}</b> to your PayPal account. You keep your item with no return hassles.</>
+                            : <>{storeName} approved <b>{money(activeClaim.refund_amount, activeClaim.currency)}</b>. PayPal is still processing the refund.</>}
                       </p>
                       {(activeClaim.merchant_message || activeClaim.ai_drafted_message) && (
                         <div style={{ marginTop: 12, background: '#fff', border: '1px solid #d1fae5', borderRadius: 8, padding: 12 }}>
@@ -426,12 +429,14 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
                             {priceResult.evidence_source === 'demo_offer_fixture' ? 'Demo offer' : 'Lower price'} at {priceResult.competitor_name}: {money(priceResult.competitor_price || 0, order.currency)}
                           </b>
                           <div style={{ fontSize: 11, color: '#64748b' }}>
-                            Original Holloway Price: <s>{money(paidPrice, order.currency)}</s> · Difference: <span style={{ color: '#dc2626', fontWeight: 700 }}>−{money(priceResult.drop_amount || 0, order.currency)} ({priceResult.drop_percentage}%)</span>
+                            Price you paid: <s>{money(paidPrice, order.currency)}</s> · Difference: <span style={{ color: '#dc2626', fontWeight: 700 }}>−{money(priceResult.drop_amount || 0, order.currency)} ({priceResult.drop_percentage}%)</span>
                           </div>
                         </div>
                       </div>
                       <span className="price-drop-delta-badge">−{money(priceResult.drop_amount || 0)} OFF</span>
                     </div>
+
+                    <Channel3Evidence market={priceResult.market} offerPrice={priceResult.competitor_price} paidPrice={paidPrice} currency={order.currency} compact />
 
                     {priceResult.best_offer?.url && (
                       <div style={{ fontSize: 11, color: '#3b82f6' }}>
@@ -443,7 +448,7 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
 
                     <form onSubmit={handleSubmitClaim} style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
                       <label style={{ fontSize: 11, fontWeight: 700, color: '#334155' }}>
-                        Add a note for Holloway Goods (Price Match / Return Prevention Request):
+                        Add a note for {storeName} (price-match request):
                         <textarea
                           value={customerNotes}
                           onChange={e => setCustomerNotes(e.target.value)}
@@ -467,7 +472,7 @@ export default function CustomerPortalPage({ toast }: { toast?: (t: { message: s
 
             {activeClaim?.status === 'PENDING_REVIEW' && (
               <div className="buyer-next-step">
-                <div><b>Your request is with Holloway Goods</b><span>The merchant sees your note, market evidence, and return-cost estimate in the claims workspace.</span></div>
+                <div><b>Your request is with {storeName}</b><span>The merchant sees your note, market evidence, and return-cost estimate in the claims workspace.</span></div>
                 <Link to="/login?demo=merchant&next=%2Fclaims" className="button button-dark">Continue to merchant review <ArrowRight size={15} /></Link>
               </div>
             )}

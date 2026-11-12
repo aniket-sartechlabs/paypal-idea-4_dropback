@@ -1,5 +1,7 @@
 # DropBack for Merchants — Full Implementation Plan
 
+> **Historical planning document.** Written during the build; parts are out of date. The current system is described in the [README](../README.md).
+
 > **Deadline:** Nov 12, 2026 at 12:00pm PST (Thu 21:00 IST)
 > **Repository:** https://github.com/aniket-sartechlabs/paypal-idea-4.git
 > **Status:** Core implementation is built. Sandbox buyer approval is currently blocked because the configured PayPal sandbox seller rejected USD. Production provider setup also remains outstanding; see Sections 8 and 16.

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { getDecisions, money, resolveClaim } from './api'
+import Channel3Evidence from './Channel3Evidence'
 import type { Decision } from './types'
 
 const GridTable = lazy(() => import('./GridTable'))
@@ -475,6 +476,8 @@ export function DecisionAnalysisModal({
               </span>
             )}
           </div>
+
+          <Channel3Evidence market={report?.channel3_market} offerPrice={decision.competitor_price ?? undefined} paidPrice={decision.purchase_price} currency={decision.currency} />
 
           {/* CUSTOMER CLAIM NOTES CALLOUT */}
           {decision.customer_claim && decision.customer_notes && (

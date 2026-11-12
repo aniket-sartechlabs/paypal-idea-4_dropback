@@ -201,7 +201,26 @@ def assess_order(db: Session, order: Order, product: Product, offer_price: Decim
     )
 
 
-async def score(assessment: Assessment, product: Product, order: Order, competitor_name: str, customer_notes: str = "") -> Assessment:
+def market_summary(market: dict | None, offer_price: Decimal, retailer: str) -> str:
+    """One line of Channel3 evidence for the case report and the AI: is this a real, lasting market price?"""
+    if not market:
+        return ""
+    history = market.get("history") or {}
+    stats = history.get("statistics") or {}
+    name = (market.get("retailer") or {}).get("name") or retailer
+    if stats.get("min_price") is not None and stats.get("mean"):
+        days = len(history.get("points") or [])
+        below = (float(stats["mean"]) - float(offer_price)) / float(stats["mean"]) * 100
+        relation = ("matches the average" if abs(below) < 0.5 else
+                    f"is {abs(below):.0f}% {'below' if below > 0 else 'above'} the average")
+        return (f"{days}-day price history for this exact product: low ${float(stats['min_price']):.2f}, "
+                f"average ${float(stats['mean']):.2f}, high ${float(stats['max_price']):.2f}; Channel3 rates the current price "
+                f"{stats.get('current_status') or 'typical'}. The {name} offer (${float(offer_price):.2f}) {relation}.")
+    return f"Live offer verified at {name}; no price history yet." if name else ""
+
+
+async def score(assessment: Assessment, product: Product, order: Order, competitor_name: str, customer_notes: str = "",
+                market: dict | None = None) -> Assessment:
     savings_if_returned = float(assessment.loss_if_returned - assessment.refund_amount)
     probability, _reason, provider, report = await agent.explain_decision(
         category=product.category,
@@ -217,6 +236,7 @@ async def score(assessment: Assessment, product: Product, order: Order, competit
         competitor_name=competitor_name,
         customer_notes=customer_notes,
         window_days=assessment.window_days,
+        market_summary=market_summary(market, assessment.offer_price, competitor_name),
     )
     assessment.probability = float(probability)
     assessment.provider = provider
@@ -225,7 +245,7 @@ async def score(assessment: Assessment, product: Product, order: Order, competit
 
 
 def build_decision(assessment: Assessment, order: Order, drop: PriceDrop, competitor_name: str, *,
-                   customer_claim: bool, customer_notes: str = "", evidence: dict | None = None) -> Decision:
+                   customer_claim: bool, customer_notes: str = "", evidence: dict | None = None, market: dict | None = None) -> Decision:
     recommend, policy_reason = assessment.recommendation()
     report = dict(assessment.report)
     report["reasoning"] = report.get("reasoning") if recommend else policy_reason
@@ -254,6 +274,8 @@ def build_decision(assessment: Assessment, order: Order, drop: PriceDrop, compet
     }
     if evidence:
         report["channel3_offer"] = evidence
+    if market:
+        report["channel3_market"] = {**market, "summary": market_summary(market, assessment.offer_price, competitor_name)}
     # A buyer request always gets a merchant answer; a merchant-side scan skips non-recommended orders.
     if customer_claim:
         status = "PENDING_REVIEW" if assessment.within_window and assessment.refund_amount > 0 else "SKIPPED"

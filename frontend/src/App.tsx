@@ -381,6 +381,17 @@ function ProductsPage({ toast }: { toast: (value: Toast) => void }) {
   const [channel3Query, setChannel3Query] = useState('')
   const [channel3Results, setChannel3Results] = useState<any[]>([])
   const [searchingChannel3, setSearchingChannel3] = useState(false)
+  const [lookupUrl, setLookupUrl] = useState('')
+
+  async function lookupByUrl() {
+    if (!/^https?:\/\//.test(lookupUrl.trim())) return
+    setSearchingChannel3(true)
+    try {
+      const item = await api<any>('/channel3/lookup', { method: 'POST', body: JSON.stringify({ url: lookupUrl.trim() }) })
+      setChannel3Results([item])
+    } catch (error) { toast({ kind: 'error', message: error instanceof Error ? error.message : 'Channel3 could not read that page.' }) }
+    finally { setSearchingChannel3(false) }
+  }
 
   async function liveCheck(product: Product) {
     setCheckingId(product.id)
@@ -431,6 +442,7 @@ function ProductsPage({ toast }: { toast: (value: Toast) => void }) {
     {adding && <form className="add-product-form" onSubmit={addProduct}>
       <div className="form-heading"><div><b>Add from the live Channel3 catalog</b><span>Search Channel3, choose the exact listing, then set your selling price.</span></div><button type="button" className="icon-button" onClick={() => setAdding(false)} aria-label="Close"><X size={18} /></button></div>
       <div className="channel3-catalog-search"><label>Search Channel3 listings<input data-testid="channel3-catalog-search" value={channel3Query} onChange={e => setChannel3Query(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void searchChannel3() } }} placeholder="Sony WH-1000XM5, Kindle Paperwhite…" /></label><button type="button" className="button button-light small-button" onClick={() => void searchChannel3()} disabled={searchingChannel3}>{searchingChannel3 ? <LoaderCircle className="spin" size={14} /> : <Search size={14} />} Search Channel3</button></div>
+      <div className="channel3-catalog-search"><label>…or paste a product page URL (your store or any retailer)<input data-testid="channel3-lookup-url" value={lookupUrl} onChange={e => setLookupUrl(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void lookupByUrl() } }} placeholder="https://yourstore.com/products/…" /></label><button type="button" className="button button-light small-button" onClick={() => void lookupByUrl()} disabled={searchingChannel3 || !/^https?:\/\//.test(lookupUrl.trim())}>{searchingChannel3 ? <LoaderCircle className="spin" size={14} /> : <Search size={14} />} Look up with Channel3</button></div>
       {channel3Results.length > 0 && <div className="channel3-catalog-results">{channel3Results.map((item, index) => <div className="channel3-catalog-result" key={item.id || `${item.title}-${index}`}>{item.image_url && <img src={item.image_url} alt="" loading="lazy" />}<div><b>{item.title}</b><span>{item.best_offer?.merchant || 'Retailer'} · {money(item.best_offer?.price || 0)} · {item.all_offers?.length || 0} current offers</span></div><button type="button" className="button button-light small-button" onClick={() => setForm({ name: item.title, sku: `C3-${String(item.id || index).replace(/[^a-z0-9]/gi, '').toUpperCase()}`, category: item.category || 'Electronics', current_price: '', description: item.description || '', channel3_product_id: String(item.id || '') })}>Select listing</button></div>)}</div>}
       <div className="form-grid"><label>Product name<input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label><label>SKU<input required value={form.sku} onChange={e => setForm({ ...form, sku: e.target.value })} /></label><label>Category<input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} /></label><label>Your selling price<input required type="number" min="0.01" step="0.01" value={form.current_price} onChange={e => setForm({ ...form, current_price: e.target.value })} /></label></div>
       <label className="full-field">Short description<input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></label><button className="button button-dark" type="submit" disabled={!form.channel3_product_id}>Add verified Channel3 listing <ArrowRight size={16} /></button>

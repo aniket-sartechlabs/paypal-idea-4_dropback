@@ -1,5 +1,7 @@
 # DropBack — PayPal Integration Specification
 
+> **Historical planning document.** Written during the build; parts are out of date. The current system is described in the [README](../README.md).
+
 **Target Environment:** PayPal Sandbox (`https://api-m.sandbox.paypal.com`)
 **API Version:** Orders v2, Payments v2 (Captures/Refunds)
 **SDK:** PayPal JavaScript SDK v6

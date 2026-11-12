@@ -1,3 +1,5 @@
+import type { Channel3Market } from './Channel3Evidence'
+
 export type Product = {
   id: string
   name: string
@@ -48,6 +50,7 @@ export type PriceDrop = {
 }
 
 export type AnalysisReport = {
+  channel3_market?: Channel3Market | null
   return_probability?: number
   confidence?: 'HIGH' | 'MEDIUM' | 'LOW' | string
   risk_level?: 'HIGH' | 'MEDIUM' | 'LOW' | string
@@ -155,6 +158,7 @@ export type PriceCheckResult = {
   all_offers?: { price: number; merchant: string; url?: string }[]
   message?: string
   evidence_source?: 'channel3_live' | 'demo_offer_fixture' | string
+  market?: Channel3Market | null
 }
 
 export type Stats = {

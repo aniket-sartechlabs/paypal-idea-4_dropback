@@ -480,3 +480,30 @@
 .signup-switch{margin-top:14px;font-size:13px;color:#6b7772}
 .signup-switch button{background:none;border:0;padding:0;font:inherit;color:#1d3a2f;font-weight:700;text-decoration:underline;cursor:pointer}
 @media (max-width:860px){.setup-layout{grid-template-columns:1fr}.setup-steps{flex-direction:row;overflow-x:auto}.setup-step{white-space:nowrap}.setup-import{grid-template-columns:1fr}.setup-checklist{grid-template-columns:1fr}.setup-banner{flex-wrap:wrap}}
+
+/* Channel3 evidence */
+.c3-evidence{border:1px solid #d9e6f5;background:#f7fbff;border-radius:9px;padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.c3-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.c3-badge{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:800;letter-spacing:.04em;color:#1f4f86;text-transform:uppercase}
+.c3-badge b{width:20px;height:20px;border-radius:6px;background:#1f4f86;color:#fff;display:grid;place-items:center;font-size:12px}
+.c3-retailer{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:#1e293b}
+.c3-retailer img{width:22px;height:22px;object-fit:contain;border-radius:5px;background:#fff;border:1px solid #e2e8f0}
+.c3-retailer small{color:#64748b}
+.c3-chart{margin:0}
+.c3-chart svg{width:100%;height:84px;display:block}
+.c3-area{fill:rgba(46,125,214,.12)}
+.c3-line{fill:none;stroke:#2e7dd6;stroke-width:2}
+.c3-paid{stroke:#dc2626;stroke-dasharray:4 4;stroke-width:1.2}
+.c3-dot{fill:#047857;stroke:#fff;stroke-width:2}
+.c3-chart figcaption{display:flex;justify-content:space-between;font-size:10px;color:#64748b;margin-top:3px}
+.c3-legend-paid{color:#dc2626}
+.c3-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.c3-stats span{display:flex;flex-direction:column;gap:2px}
+.c3-stats small{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+.c3-stats b{font-size:13px;color:#0f172a}
+.c3-status{text-transform:capitalize}
+.c3-low{color:#047857}.c3-high{color:#b45309}
+.c3-summary{margin:0;font-size:12px;color:#334155;line-height:1.5}
+.c3-compact .c3-chart svg{height:64px}
+@media (max-width:600px){.c3-stats{grid-template-columns:repeat(2,1fr)}}
+.c3-count{font-size:11px;color:#1f4f86;font-weight:600}

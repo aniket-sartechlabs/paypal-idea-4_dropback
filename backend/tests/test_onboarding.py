@@ -158,3 +158,29 @@ def test_render_urls_are_normalized(monkeypatch):
     assert settings.database_url == "postgresql+psycopg://u:p@host:5432/db"
     assert settings.app_base_url == "https://dropback.onrender.com"
     assert "https://dropback.onrender.com" in settings.cors_origins
+
+
+def test_claims_carry_channel3_market_evidence(client, sessions, fake_paypal, fake_channel3):
+    order_id = buy(client, sessions)["internal_order_id"]
+    check = client.post("/api/v1/claims/check-price", json={"order_id": order_id}).json()
+    assert check["market"]["retailer"]["name"] == "Best Buy"
+    assert len(check["market"]["history"]["points"]) == 30
+    assert "30-day price history" in check["market"]["summary"]
+    claim = client.post("/api/v1/claims/submit", json={"order_id": order_id, "price_drop_id": check["price_drop_id"]}).json()
+    report = claim["analysis_report"]
+    assert report["channel3_market"]["history"]["statistics"]["current_status"] == "low"
+    assert any("Channel3" in driver for driver in report["key_drivers"])
+
+
+def test_channel3_offer_rules():
+    from app.services.channel3 import _in_stock, _is_new, parse_retailers, retailer_allowed
+    assert _in_stock("InStock") and _in_stock("LimitedAvailability")
+    assert not _in_stock("OutOfStock") and not _in_stock("out_of_stock") and not _in_stock("SoldOut")
+    assert _is_new("new") and _is_new("New") and not _is_new(None) and not _is_new("refurbished")
+    assert parse_retailers("https://www.BestBuy.com/x, target.com") == ["bestbuy.com", "target.com"]
+    assert retailer_allowed("shop.bestbuy.com", ["bestbuy.com"]) and not retailer_allowed("notbestbuy.com", ["bestbuy.com"])
+
+
+def test_buyer_portal_shows_the_merchants_store_name(client):
+    client.post("/api/v1/auth/signup", json=OWNER)
+    assert client.get("/api/v1/store/info").json() == {"merchant_name": "Holloway Goods", "protection_window_days": 14}

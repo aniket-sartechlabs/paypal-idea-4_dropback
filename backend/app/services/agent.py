@@ -60,6 +60,7 @@ def build_rule_report(
     competitor_name: str = "",
     customer_notes: str = "",
     window_days: int = 14,
+    market_summary: str = "",
 ) -> dict[str, Any]:
     risk_level = "HIGH" if probability >= 0.55 else "MEDIUM" if probability >= 0.3 else "LOW"
     drivers = [
@@ -67,6 +68,8 @@ def build_rule_report(
         f"Price difference: {drop_percentage:.1f}% market price drop creates high return-and-repurchase incentive.",
         f"Category dynamics: '{category}' has elevated remorse sensitivity when competitor discounts appear.",
     ]
+    if market_summary:
+        drivers.append(f"Market evidence (Channel3): {market_summary}")
     if customer_notes:
         drivers.append("The buyer added a note to the request (shown to the merchant, not used in scoring).")
     if savings > 0:
@@ -116,6 +119,7 @@ async def explain_decision(
     competitor_name: str = "",
     customer_notes: str = "",
     window_days: int = 14,
+    market_summary: str = "",
 ) -> tuple[float, str, str, dict[str, Any]]:
     """Score return likelihood and draft the buyer message.
 
@@ -129,7 +133,7 @@ async def explain_decision(
     active_provider = "openai" if api_key and provider in {"openai", "auto"} else "gemini" if settings.gemini_api_key and provider == "gemini" else "rules"
 
     if active_provider == "rules":
-        report = build_rule_report(category, drop_percentage, days_since_purchase, probability, savings, product_name, purchase_price, refund_amount, return_cost, buyer_name, competitor_name, customer_notes, window_days)
+        report = build_rule_report(category, drop_percentage, days_since_purchase, probability, savings, product_name, purchase_price, refund_amount, return_cost, buyer_name, competitor_name, customer_notes, window_days, market_summary)
         return probability, report["reasoning"], "rules", report
 
     system_prompt = (
@@ -163,6 +167,7 @@ async def explain_decision(
         f"Proposed Price Match Refund: ${refund_amount:.2f}\n"
         f"Loss if Returned (Freight + Restocking + Open-Box + Lost Sale Margin): ${return_cost:.2f}\n"
         f"Loss if Returned minus Refund: ${savings:.2f}\n"
+        f"Channel3 Market Evidence: {market_summary or 'No price history available.'}\n"
         f"Deterministic Actuarial Baseline Probability: {probability:.2f}\n"
         f"<buyer_note>{safe_note}</buyer_note>\n"
     )
@@ -246,7 +251,7 @@ async def explain_decision(
 
     except Exception as exc:
         log.warning("LLM scoring failed (%s), falling back to actuarial rule report.", exc)
-        fallback_report = build_rule_report(category, drop_percentage, days_since_purchase, probability, savings, product_name, purchase_price, refund_amount, return_cost, buyer_name, competitor_name, customer_notes, window_days)
+        fallback_report = build_rule_report(category, drop_percentage, days_since_purchase, probability, savings, product_name, purchase_price, refund_amount, return_cost, buyer_name, competitor_name, customer_notes, window_days, market_summary)
         fallback_reason = f"{fallback_report['reasoning']} (LLM unavailable; using deterministic actuarial model)"
         fallback_report["reasoning"] = fallback_reason
         return probability, fallback_reason, "rules", fallback_report

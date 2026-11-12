@@ -37,6 +37,19 @@ def _title(product: dict) -> str:
     return str(product.get("title") or product.get("name") or "").strip()
 
 
+OUT_OF_STOCK = {"outofstock", "soldout", "discontinued", "unavailable", "false"}
+
+
+def _in_stock(value: Any) -> bool:
+    """Channel3 reports schema.org-style values (InStock, OutOfStock, ...)."""
+    return re.sub(r"[^a-z]", "", str(value).lower()) not in OUT_OF_STOCK
+
+
+def _is_new(condition: Any) -> bool:
+    """Refund evidence needs an offer explicitly listed as new; a missing condition is not enough."""
+    return str(condition or "").strip().lower() == "new"
+
+
 def _domain(value: str) -> str:
     value = (value or "").strip().lower()
     value = re.sub(r"^https?://", "", value).split("/")[0]
@@ -112,6 +125,9 @@ class Channel3Client:
     base_url = "https://api.trychannel3.com"
     min_match_confidence = 0.75
 
+    def __init__(self) -> None:
+        self._websites: dict[str, dict | None] = {}
+
     def matches_product(self, product_name: str, sku: str, candidate: str) -> bool:
         return _match_score(product_name, sku, {"title": candidate}) >= self.min_match_confidence
 
@@ -141,8 +157,8 @@ class Channel3Client:
                         "price": round(amt, 2),
                         "merchant": str(o.get("domain") or o.get("merchant") or "Retailer")[:100],
                         "url": o.get("url"),
-                        "available": o.get("availability") not in {"out_of_stock", "unavailable", False},
-                        "condition": str(o.get("condition") or "new"),
+                        "available": _in_stock(o.get("availability")),
+                        "condition": str(o.get("condition") or "unknown"),
                     })
             best = min(valid_offers, key=lambda x: x["price"]) if valid_offers else None
             items.append({
@@ -162,7 +178,9 @@ class Channel3Client:
         if not key:
             raise Channel3Error("Channel3 is required for live price checks. Add CHANNEL3_API_KEY to the server .env file.", 503)
         headers = {"x-api-key": key, "Content-Type": "application/json", "Accept": "application/json"}
-        body = {"query": f"{product_name} {sku}", "limit": 8, "config": {"country": "US", "currency": currency}}
+        body = {"query": f"{product_name} {sku}", "limit": 8, "config": {"country": "US", "currency": currency},
+                # Channel3 does the filtering: new, in-stock offers, and only the merchant's approved retailers.
+                "filters": {"conditions": ["new"], "availability": ["InStock"], **({"website_ids": allowed_retailers} if allowed_retailers else {})}}
         async with httpx.AsyncClient(timeout=20) as client:
             try:
                 response = await client.post(f"{self.base_url}/v1/search", headers=headers, json=body)
@@ -200,18 +218,21 @@ class Channel3Client:
                             "price": round(amount, 2),
                             "merchant": str(offer.get("domain") or offer.get("merchant") or offer.get("seller") or "Retailer")[:100],
                             "url": offer.get("url"),
-                            "available": offer.get("availability") not in {"out_of_stock", "unavailable", False},
-                            "condition": str(offer.get("condition") or "new"),
+                            "available": _in_stock(offer.get("availability")),
+                            "condition": str(offer.get("condition") or "unknown"),
                             "weight": weight_info,
                         })
             if priced:
                 candidates.append((ratio, result, title, priced))
         candidates.sort(key=lambda item: item[0], reverse=True)
+        if (not candidates or candidates[0][0] < self.min_match_confidence) and allowed_retailers:
+            return {"matched": False, "results_count": len(results), "retailer_filtered": True,
+                    "message": "No in-stock new offer for this exact model from a retailer this store price-matches: " + ", ".join(allowed_retailers) + "."}
         if not candidates or candidates[0][0] < self.min_match_confidence:
             return {"matched": False, "results_count": len(results), "message": "Channel3 could not confirm an exact model match. Use the Channel3 product title or matching SKU."}
 
         match_score, matched, title, offers = candidates[0]
-        new_offers = [offer for offer in offers if offer["available"] and offer["condition"].lower() not in {"used", "refurbished", "pre-owned"}]
+        new_offers = [offer for offer in offers if offer["available"] and _is_new(offer["condition"])]
         if not new_offers:
             raise Channel3Error("Channel3 matched the product but returned no current in-stock new offers.", 404)
         if allowed_retailers:
@@ -299,16 +320,105 @@ class Channel3Client:
                 continue
             amount = _offer_price(offer)
             offer_currency = offer.get("currency") or (offer.get("price", {}).get("currency") if isinstance(offer.get("price"), dict) else None) or currency
-            if amount and str(offer_currency).upper() == currency.upper() and offer.get("availability") not in {"out_of_stock", "unavailable", False}:
+            if amount and str(offer_currency).upper() == currency.upper() and _in_stock(offer.get("availability")):
                 valid.append({
                     "price": round(amount, 2),
                     "merchant": str(offer.get("domain") or offer.get("merchant") or "Retailer")[:100],
                     "url": offer.get("url"),
-                    "condition": str(offer.get("condition") or "new"),
+                    "condition": str(offer.get("condition") or "unknown"),
                 })
         if not valid:
             raise Channel3Error("Channel3 matched the product but returned no live offers.", 404)
         return {"id": product.get("id"), "title": _title(product), "image_url": product.get("image_url") or product.get("image"), "best_offer": min(valid, key=lambda item: item["price"]), "offer_count": len(valid)}
+
+    # -- market evidence: price history (Price Tracking API) and retailer details (Websites API) ------------
+    def _headers(self) -> dict:
+        key = get_settings().channel3_api_key
+        if not key:
+            raise Channel3Error("Channel3 is required. Add CHANNEL3_API_KEY to .env.", 503)
+        return {"x-api-key": key, "Content-Type": "application/json", "Accept": "application/json"}
+
+    async def price_history(self, product_id: str, days: int = 90) -> dict:
+        async with httpx.AsyncClient(timeout=20) as client:
+            try:
+                response = await client.get(f"{self.base_url}/v0/price-tracking/history/{product_id}", params={"days": days}, headers=self._headers())
+            except httpx.HTTPError as exc:
+                raise Channel3Error("Channel3 price history could not be reached.") from exc
+        if response.is_error:
+            raise Channel3Error(f"Channel3 price history failed ({response.status_code}).", 502)
+        payload = response.json()
+        points = [{"date": str(p.get("timestamp", ""))[:10], "price": round(float(p["price"]), 2)}
+                  for p in payload.get("history") or [] if isinstance(p, dict) and p.get("price") is not None]
+        stats = payload.get("statistics") or {}
+        return {"points": points[-90:], "statistics": {k: stats.get(k) for k in ("min_price", "max_price", "mean", "current_price", "current_status")} if stats else None}
+
+    async def website(self, domain: str) -> dict | None:
+        domain = _domain(domain)
+        if not domain:
+            return None
+        if domain in self._websites:
+            return self._websites[domain]
+        async with httpx.AsyncClient(timeout=15) as client:
+            try:
+                response = await client.get(f"{self.base_url}/v1/websites/{domain}", params={"country": "US"}, headers=self._headers())
+            except httpx.HTTPError:
+                return None
+        info = None
+        if response.status_code == 200:
+            data = response.json()
+            info = {"domain": domain, "name": data.get("name") or domain, "logo_url": data.get("logo_url"), "website_id": data.get("id")}
+        self._websites[domain] = info
+        return info
+
+    async def market_context(self, product_id: str | None, retailer: str | None) -> dict:
+        """Evidence for a claim: 90-day price history for the exact product, and who the retailer is."""
+        context: dict = {"product_id": product_id, "history": None, "retailer": None}
+        if product_id:
+            try:
+                context["history"] = await self.price_history(product_id)
+            except Channel3Error:
+                pass
+        if retailer:
+            context["retailer"] = await self.website(retailer)
+        return context
+
+    async def lookup(self, url: str, currency: str = "USD") -> dict:
+        """Resolve any product page URL to the exact Channel3 product (Lookup API)."""
+        async with httpx.AsyncClient(timeout=45) as client:
+            try:
+                response = await client.post(f"{self.base_url}/v1/lookup", headers=self._headers(),
+                                             json={"url": url, "realtime_fetch": True})
+            except httpx.HTTPError as exc:
+                raise Channel3Error("Channel3 lookup could not be reached.") from exc
+        if response.status_code in (404, 422):
+            raise Channel3Error("Channel3 could not identify a product at that URL.", 404)
+        if response.is_error:
+            raise Channel3Error(f"Channel3 lookup failed ({response.status_code}).", 502)
+        product = response.json().get("product") or {}
+        offers = []
+        for offer in product.get("offers") or []:
+            amount = _offer_price(offer) if isinstance(offer, dict) else None
+            if amount and _in_stock(offer.get("availability")) and _is_new(offer.get("condition")):
+                offers.append({"price": round(amount, 2), "merchant": str(offer.get("domain") or "Retailer")[:100], "url": offer.get("url")})
+        images = product.get("images") or []
+        first_image = images[0] if images else None
+        image_url = first_image.get("url") if isinstance(first_image, dict) else first_image
+        brands = product.get("brands") or []
+        brand = brands[0].get("name") if brands and isinstance(brands[0], dict) else (brands[0] if brands else None)
+        category = product.get("category") or {}
+        return {"id": product.get("id"), "title": _title(product), "description": (product.get("description") or "")[:500],
+                "brand": brand, "image_url": image_url, "category": category.get("title") if isinstance(category, dict) else None,
+                "best_offer": min(offers, key=lambda o: o["price"]) if offers else None, "all_offers": offers}
+
+    async def start_tracking(self, product_id: str) -> bool:
+        """Keep Channel3 price history building for a protected product (Price Tracking API)."""
+        async with httpx.AsyncClient(timeout=15) as client:
+            try:
+                response = await client.post(f"{self.base_url}/v0/price-tracking/start", headers=self._headers(),
+                                             json={"canonical_product_id": product_id})
+            except httpx.HTTPError:
+                return False
+        return response.status_code < 300
 
 
 channel3 = Channel3Client()
