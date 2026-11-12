@@ -15,7 +15,7 @@ from app.schemas import CheckPriceInput, ClaimSubmitInput
 from app.security import rate_limited, record_hit, require_order_access
 from app.serializers import add_action, as_decimal, decision_dict, order_dict
 from app.services import claims
-from app.services.channel3 import Channel3Error, channel3
+from app.services.channel3 import Channel3Error, channel3, parse_retailers, retailer_allowed
 
 router = APIRouter(prefix="/api/v1")
 
@@ -90,7 +90,8 @@ async def check_price_for_claim(body: CheckPriceInput, request: Request, db: Db)
     item, product = _order_product(db, order, body.product_id)
     paid_price = as_decimal(item.unit_price)
     try:
-        comparison = await channel3.search_and_compare(product.name, product.sku, float(paid_price), order.currency)
+        comparison = await channel3.search_and_compare(product.name, product.sku, float(paid_price), order.currency,
+                                                       parse_retailers(claims.get_settings_row(db).allowed_retailers))
     except Channel3Error as exc:
         raise HTTPException(exc.status_code, str(exc)) from exc
     if not comparison.get("matched"):
@@ -141,9 +142,13 @@ async def submit_customer_claim(body: ClaimSubmitInput, request: Request, db: Db
             raise HTTPException(409, "The price check expired. Run the live price check again before submitting.")
         if as_decimal(drop.old_price) != as_decimal(item.unit_price):
             raise HTTPException(409, "The price evidence does not match this order. Run the price check again.")
+        allowed = parse_retailers(settings_row.allowed_retailers)
+        if allowed and not retailer_allowed(drop.offer_merchant or "", allowed):
+            raise HTTPException(409, "This store only matches prices from: " + ", ".join(allowed) + ".")
     else:
         try:
-            comparison = await channel3.search_and_compare(product.name, product.sku, float(item.unit_price), order.currency)
+            comparison = await channel3.search_and_compare(product.name, product.sku, float(item.unit_price), order.currency,
+                                                           parse_retailers(settings_row.allowed_retailers))
         except Channel3Error as exc:
             raise HTTPException(exc.status_code, str(exc)) from exc
         if not (comparison.get("matched") and comparison.get("lower_than_current")):

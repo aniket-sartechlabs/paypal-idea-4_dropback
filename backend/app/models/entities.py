@@ -164,6 +164,19 @@ class MerchantSettings(Base):
     return_shipping_cost: Mapped[float] = mapped_column(Numeric(10, 2), default=12)
     restocking_fee_percentage: Mapped[float] = mapped_column(Numeric(7, 3), default=15)
     open_box_discount_percentage: Mapped[float] = mapped_column(Numeric(7, 3), default=25)
+    # Profit lost when a buyer returns the item and buys it elsewhere.
+    gross_margin_percentage: Mapped[float] = mapped_column(Numeric(7, 3), default=30)
+    # Comma-separated retailer domains whose prices the merchant matches; empty matches any in-stock new offer.
+    allowed_retailers: Mapped[str] = mapped_column(Text, default="")
+    store_url: Mapped[str] = mapped_column(String(255), default="")
+    # Merchant workspace owner (created by sign-up) and the merchant's own PayPal REST app.
+    owner_email: Mapped[str] = mapped_column(String(254), default="")
+    owner_password_hash: Mapped[str] = mapped_column(String(255), default="")
+    paypal_client_id: Mapped[str] = mapped_column(String(255), default="")
+    paypal_client_secret_enc: Mapped[str] = mapped_column(Text, default="")
+    paypal_webhook_id: Mapped[str] = mapped_column(String(64), default="")
+    paypal_connected_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    onboarding_completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_utc, onupdate=now_utc)
 
 

@@ -15,6 +15,7 @@ from app.schemas import ClaimResolveInput, SettingsUpdate, ToolInvokeInput
 from app.security import Merchant
 from app.serializers import add_action, as_decimal, decision_dict, money, parse_decision_report, refund_dict
 from app.services import claims, paypal_tools
+from app.services.channel3 import parse_retailers
 from app.services.paypal import PayPalError, paypal
 
 log = logging.getLogger("dropback.merchant")
@@ -126,7 +127,7 @@ def dashboard_stats(db: Db, _: Merchant):
         "estimated_returns_avoided": len(completed),
         "estimated_savings": round(sum(money(row.estimated_savings) for row in decisions if row.status == "REFUNDED"), 2),
         "orders_total": len(orders), "decisions_total": len(decisions),
-        "paypal_configured": settings.paypal_ready, "channel3_configured": bool(settings.channel3_api_key),
+        "paypal_configured": paypal.ready, "channel3_configured": bool(settings.channel3_api_key),
     }
 
 
@@ -144,6 +145,8 @@ def read_settings(db: Db, _: Merchant):
             "auto_refund_enabled": False, "min_price_drop_percentage": float(row.min_price_drop_percentage),
             "min_price_drop_amount": money(row.min_price_drop_amount), "return_shipping_cost": money(row.return_shipping_cost),
             "restocking_fee_percentage": float(row.restocking_fee_percentage), "open_box_discount_percentage": float(row.open_box_discount_percentage),
+            "gross_margin_percentage": float(row.gross_margin_percentage or 0), "allowed_retailers": parse_retailers(row.allowed_retailers),
+            "store_url": row.store_url or "",
             "channel3_configured": bool(settings.channel3_api_key), "paypal_environment": settings.paypal_env,
             "llm_configured": bool(settings.openai_api_key or settings.gemini_api_key)}
 
@@ -154,6 +157,10 @@ def update_settings(body: SettingsUpdate, db: Db, merchant: Merchant):
         raise HTTPException(422, "Automatic refunds are disabled in this build. Merchant approval is required before every payment action.")
     row = claims.get_settings_row(db)
     for key, value in body.model_dump(exclude_none=True).items():
+        if key == "allowed_retailers":
+            value = ", ".join(parse_retailers(value))
+        if key == "store_url":
+            value = value.strip()
         setattr(row, key, value)
     db.commit()
     return read_settings(db, merchant)

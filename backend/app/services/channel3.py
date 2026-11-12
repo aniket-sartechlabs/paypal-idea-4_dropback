@@ -1,6 +1,8 @@
 from difflib import SequenceMatcher
 from typing import Any
 
+import re
+
 import httpx
 
 from app.config import get_settings
@@ -33,6 +35,22 @@ def _offer_price(offer: dict) -> float | None:
 
 def _title(product: dict) -> str:
     return str(product.get("title") or product.get("name") or "").strip()
+
+
+def _domain(value: str) -> str:
+    value = (value or "").strip().lower()
+    value = re.sub(r"^https?://", "", value).split("/")[0]
+    return value[4:] if value.startswith("www.") else value
+
+
+def parse_retailers(text: str) -> list[str]:
+    """'bestbuy.com, www.Target.com' -> ['bestbuy.com', 'target.com']"""
+    return sorted({_domain(part) for part in re.split(r"[,\s]+", text or "") if _domain(part)})
+
+
+def retailer_allowed(merchant: str, allowed: list[str]) -> bool:
+    domain = _domain(merchant)
+    return any(domain == entry or domain.endswith("." + entry) for entry in allowed)
 
 
 def _normalized(value: str) -> str:
@@ -138,7 +156,8 @@ class Channel3Client:
             })
         return items
 
-    async def search_and_compare(self, product_name: str, sku: str, local_price: float, currency: str) -> dict:
+    async def search_and_compare(self, product_name: str, sku: str, local_price: float, currency: str,
+                                 allowed_retailers: list[str] | None = None) -> dict:
         key = get_settings().channel3_api_key
         if not key:
             raise Channel3Error("Channel3 is required for live price checks. Add CHANNEL3_API_KEY to the server .env file.", 503)
@@ -195,6 +214,11 @@ class Channel3Client:
         new_offers = [offer for offer in offers if offer["available"] and offer["condition"].lower() not in {"used", "refurbished", "pre-owned"}]
         if not new_offers:
             raise Channel3Error("Channel3 matched the product but returned no current in-stock new offers.", 404)
+        if allowed_retailers:
+            new_offers = [offer for offer in new_offers if retailer_allowed(offer["merchant"], allowed_retailers)]
+            if not new_offers:
+                return {"matched": False, "results_count": len(results), "retailer_filtered": True,
+                        "message": "No in-stock new offer from a retailer this store price-matches: " + ", ".join(allowed_retailers) + "."}
         best = min(new_offers, key=lambda offer: offer["price"])
         matched_id = matched.get("id")
         return {

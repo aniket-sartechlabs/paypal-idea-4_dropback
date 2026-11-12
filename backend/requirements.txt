@@ -9,3 +9,4 @@ psycopg[binary]>=3.2,<4.0
 paypal-server-sdk>=2.4.0
 mcp>=1.9,<2
 
+cryptography>=42,<47

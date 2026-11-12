@@ -68,6 +68,9 @@ export type AnalysisReport = {
     reverse_shipping?: number
     restocking_cost?: number
     open_box_loss?: number
+    lost_margin?: number
+    loss_if_returned?: number
+    expected_loss?: number
   }
 }
 

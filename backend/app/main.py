@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from app.bootstrap import startup
 from app.config import get_settings
 from app.mcp_server import BearerProtectedMCP, build_mcp
-from app.routes import auth, buyer, catalog, checkout, merchant, system, webhooks
+from app.routes import auth, buyer, catalog, checkout, merchant, setup, system, webhooks
 
 logging.basicConfig(level=logging.INFO)
 settings = get_settings()
@@ -54,7 +54,7 @@ async def security_headers(request: Request, call_next):
     return response
 
 
-for module in (system, auth, catalog, checkout, buyer, merchant, webhooks):
+for module in (system, auth, setup, catalog, checkout, buyer, merchant, webhooks):
     app.include_router(module.router)
 
 app.mount("/mcp", BearerProtectedMCP(lambda: app.state.mcp_http))

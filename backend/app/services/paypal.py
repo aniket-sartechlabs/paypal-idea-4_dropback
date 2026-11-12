@@ -59,10 +59,36 @@ class PayPalClient:
         self.settings = get_settings()
         self._client: PaypalServersdkClient | None = None
         self._client_key: tuple[str, str, str] | None = None
+        # Set when the merchant connects their own PayPal REST app in onboarding; otherwise .env is used.
+        self._connected: tuple[str, str, str] | None = None
+
+    # -- credentials -------------------------------------------------------------
+    def use_merchant_credentials(self, client_id: str, client_secret: str, webhook_id: str = "") -> None:
+        self._connected = (client_id, client_secret, webhook_id) if client_id and client_secret else None
+
+    @property
+    def client_id(self) -> str:
+        return self._connected[0] if self._connected else self.settings.paypal_client_id
+
+    @property
+    def client_secret(self) -> str:
+        return self._connected[1] if self._connected else self.settings.paypal_client_secret
+
+    @property
+    def webhook_id(self) -> str:
+        return (self._connected[2] if self._connected else "") or self.settings.paypal_webhook_id
+
+    @property
+    def ready(self) -> bool:
+        return bool(self.client_id and self.client_secret)
+
+    @property
+    def credential_source(self) -> str:
+        return "merchant" if self._connected else ("env" if self.settings.paypal_ready else "none")
 
     # -- configuration -------------------------------------------------------
     def _ensure_configured(self) -> None:
-        if not self.settings.paypal_ready:
+        if not self.ready:
             raise PayPalError("PayPal is not configured. Set PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET.", 503)
         sandbox_url = "sandbox" in self.settings.paypal_base_url.lower()
         if self.settings.is_production and sandbox_url and self.settings.paypal_env.lower() != "sandbox":
@@ -76,12 +102,12 @@ class PayPalClient:
 
     def sdk(self) -> PaypalServersdkClient:
         self._ensure_configured()
-        key = (self.settings.paypal_client_id, self.settings.paypal_client_secret, self.settings.paypal_env.lower())
+        key = (self.client_id, self.client_secret, self.settings.paypal_env.lower())
         if self._client is None or self._client_key != key:
             self._client = PaypalServersdkClient(
                 client_credentials_auth_credentials=ClientCredentialsAuthCredentials(
-                    o_auth_client_id=self.settings.paypal_client_id,
-                    o_auth_client_secret=self.settings.paypal_client_secret,
+                    o_auth_client_id=self.client_id,
+                    o_auth_client_secret=self.client_secret,
                 ),
                 environment=self.environment,
                 timeout=30,
@@ -184,7 +210,7 @@ class PayPalClient:
         return access
 
     async def verify_webhook(self, headers: dict[str, str], event: dict) -> bool:
-        if not self.settings.paypal_webhook_id:
+        if not self.webhook_id:
             return False
         token = await self.access_token()
         verification = {
@@ -193,7 +219,7 @@ class PayPalClient:
             "transmission_id": headers.get("paypal-transmission-id", ""),
             "transmission_sig": headers.get("paypal-transmission-sig", ""),
             "transmission_time": headers.get("paypal-transmission-time", ""),
-            "webhook_id": self.settings.paypal_webhook_id,
+            "webhook_id": self.webhook_id,
             "webhook_event": event,
         }
         async with httpx.AsyncClient(timeout=20) as client:
@@ -208,6 +234,37 @@ class PayPalClient:
         if response.is_error:
             raise PayPalError("PayPal webhook verification failed.", 502)
         return response.json().get("verification_status") == "SUCCESS"
+
+    async def verify_credentials(self, client_id: str, client_secret: str) -> None:
+        """Fetch an OAuth token with candidate credentials, without switching to them."""
+        probe = PaypalServersdkClient(
+            client_credentials_auth_credentials=ClientCredentialsAuthCredentials(o_auth_client_id=client_id, o_auth_client_secret=client_secret),
+            environment=self.environment, timeout=20, max_retries=0)
+        try:
+            token = await asyncio.to_thread(probe.oauth_2.fetch_token)
+        except Exception as exc:
+            raise PayPalError("PayPal rejected these credentials. Copy the client ID and secret from your PayPal app again.", 400) from exc
+        if not getattr(token, "access_token", None):
+            raise PayPalError("PayPal rejected these credentials.", 400)
+
+    async def register_webhook(self, url: str, event_types: list[str]) -> str:
+        """Subscribe the connected app to DropBack's webhook (Notifications API; not in the Server SDK)."""
+        token = await self.access_token()
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.post(
+                f"{self.settings.paypal_base_url.rstrip('/')}/v1/notifications/webhooks",
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                json={"url": url, "event_types": [{"name": name} for name in event_types]},
+            )
+            if response.status_code == 400 and "WEBHOOK_URL_ALREADY_EXISTS" in response.text:
+                listing = await client.get(f"{self.settings.paypal_base_url.rstrip('/')}/v1/notifications/webhooks",
+                                           headers={"Authorization": f"Bearer {token}"})
+                for hook in listing.json().get("webhooks", []):
+                    if hook.get("url") == url:
+                        return str(hook.get("id"))
+        if response.is_error:
+            raise PayPalError(f"PayPal could not register the webhook ({response.status_code}).", 502)
+        return str(response.json().get("id", ""))
 
 
 paypal = PayPalClient()

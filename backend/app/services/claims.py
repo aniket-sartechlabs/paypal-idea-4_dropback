@@ -115,6 +115,7 @@ class Assessment:
     reverse_shipping: Decimal
     restocking_cost: Decimal
     open_box_loss: Decimal
+    lost_margin: Decimal
     days_since: int
     window_days: int
     within_window: bool
@@ -130,13 +131,22 @@ class Assessment:
         return as_decimal(self.reverse_shipping + self.restocking_cost + self.open_box_loss)
 
     @property
+    def loss_if_returned(self) -> Decimal:
+        """A return-and-rebuy costs the return handling plus the profit on the lost sale."""
+        return as_decimal(self.return_cost + self.lost_margin)
+
+    @property
+    def expected_loss(self) -> Decimal:
+        return as_decimal(self.loss_if_returned * Decimal(str(self.probability)))
+
+    @property
     def drop_percentage(self) -> float:
         return float(self.price_difference / self.purchase_value * 100) if self.purchase_value else 0.0
 
     @property
     def expected_savings(self) -> Decimal:
-        """Probability-weighted return cost avoided, minus the refund paid."""
-        return as_decimal(self.return_cost * Decimal(str(self.probability)) - self.refund_amount)
+        """Probability-weighted loss avoided (return handling + lost sale margin), minus the refund paid."""
+        return as_decimal(self.expected_loss - self.refund_amount)
 
     def recommendation(self) -> tuple[bool, str | None]:
         if not self.within_window:
@@ -150,7 +160,8 @@ class Assessment:
         if self.probability < MIN_RETURN_PROBABILITY:
             return False, "Return likelihood is below the merchant's decision threshold."
         if self.expected_savings <= 0:
-            return False, f"Probability-weighted return cost (${float(self.return_cost) * self.probability:.2f}) does not exceed the refund amount."
+            return False, (f"Expected loss from a return (${float(self.expected_loss):.2f}: {self.probability:.0%} of "
+                           f"${float(self.loss_if_returned):.2f}) does not exceed the refund amount.")
         return True, None
 
 
@@ -171,6 +182,7 @@ def assess_order(db: Session, order: Order, product: Product, offer_price: Decim
     reverse_shipping = as_decimal(as_decimal(settings_row.return_shipping_cost) + weight * quantity * SHIPPING_COST_PER_LB)
     restocking_cost = as_decimal(purchase_value * as_decimal(settings_row.restocking_fee_percentage) / 100)
     open_box_loss = as_decimal(purchase_value * as_decimal(settings_row.open_box_discount_percentage) / 100)
+    lost_margin = as_decimal(purchase_value * as_decimal(settings_row.gross_margin_percentage or 0) / 100)
 
     days_since = days_since_capture(order)
     window_days = window_days_for(product, settings_row)
@@ -184,13 +196,13 @@ def assess_order(db: Session, order: Order, product: Product, offer_price: Decim
         unit_price=max(as_decimal(item.unit_price) for item in matching), offer_price=offer_price,
         price_difference=price_difference, refund_amount=refund_amount,
         reverse_shipping=reverse_shipping, restocking_cost=restocking_cost, open_box_loss=open_box_loss,
-        days_since=days_since, window_days=window_days, within_window=days_since <= window_days,
+        lost_margin=lost_margin, days_since=days_since, window_days=window_days, within_window=days_since <= window_days,
         min_drop_ok=min_drop_ok, budget_available=refund_amount <= budget_left, baseline_probability=baseline,
     )
 
 
 async def score(assessment: Assessment, product: Product, order: Order, competitor_name: str, customer_notes: str = "") -> Assessment:
-    savings_if_returned = float(assessment.return_cost - assessment.refund_amount)
+    savings_if_returned = float(assessment.loss_if_returned - assessment.refund_amount)
     probability, _reason, provider, report = await agent.explain_decision(
         category=product.category,
         drop_percentage=assessment.drop_percentage,
@@ -200,7 +212,7 @@ async def score(assessment: Assessment, product: Product, order: Order, competit
         product_name=product.name,
         purchase_price=float(assessment.purchase_value),
         refund_amount=float(assessment.refund_amount),
-        return_cost=float(assessment.return_cost),
+        return_cost=float(assessment.loss_if_returned),
         buyer_name=order.buyer_name or "Buyer",
         competitor_name=competitor_name,
         customer_notes=customer_notes,
@@ -235,7 +247,10 @@ def build_decision(assessment: Assessment, order: Order, drop: PriceDrop, compet
         "reverse_shipping": money(assessment.reverse_shipping),
         "restocking_cost": money(assessment.restocking_cost),
         "open_box_loss": money(assessment.open_box_loss),
-        "net_savings": money(max(Decimal("0"), assessment.expected_savings)),
+        "lost_margin": money(assessment.lost_margin),
+        "loss_if_returned": money(assessment.loss_if_returned),
+        "expected_loss": money(assessment.expected_loss),
+        "net_savings": money(assessment.expected_savings),
     }
     if evidence:
         report["channel3_offer"] = evidence

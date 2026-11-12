@@ -30,9 +30,9 @@ def _find_order(db, key: str) -> Order | None:
 
 @router.get("/paypal/config")
 def paypal_config():
-    if not settings.paypal_ready:
+    if not paypal.ready:
         return {"configured": False, "client_id": None, "environment": settings.paypal_env}
-    return {"configured": True, "client_id": settings.paypal_client_id, "environment": settings.paypal_env}
+    return {"configured": True, "client_id": paypal.client_id, "environment": settings.paypal_env}
 
 
 @router.get("/orders")
@@ -52,7 +52,7 @@ def get_order(order_id: str, db: Db, _: Merchant):
 @router.post("/orders", status_code=201)
 async def create_order(body: OrderInput, request: Request, response: Response, db: Db,
                        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None):
-    if not settings.paypal_ready:
+    if not paypal.ready:
         raise HTTPException(503, "PayPal sandbox credentials are required for checkout.")
     request_key = (idempotency_key or "").strip()
     if not 8 <= len(request_key) <= 80:

@@ -153,7 +153,7 @@ export default function DecisionsPage({
         flex: compactGrid ? 1.05 : 1.15,
         minWidth: compactGrid ? 112 : 176,
         cellRenderer: (p: { data: Decision }) => {
-          const returnLoss = p.data.estimated_return_cost || 0
+          const returnLoss = p.data.analysis_report?.financial_breakdown?.loss_if_returned ?? p.data.estimated_return_cost ?? 0
           const diffSettle = p.data.refund_amount || 0
           const netSaved = p.data.estimated_savings || 0
           return (
@@ -226,7 +226,7 @@ export default function DecisionsPage({
     },
     {
       headerName: 'RETURN VS SETTLE', flex: 1, minWidth: 168, hide: compactGrid,
-      cellRenderer: (p: { data: Decision }) => <div className="claim-cost-cell"><span><small>Return</small><b>{money(p.data.estimated_return_cost || 0, p.data.currency)}</b></span><span><small>Settle</small><b>{money(p.data.refund_amount || 0, p.data.currency)}</b></span><strong>+{money(p.data.estimated_savings || 0, p.data.currency)} saved</strong></div>,
+      cellRenderer: (p: { data: Decision }) => <div className="claim-cost-cell"><span><small>Return</small><b>{money(p.data.analysis_report?.financial_breakdown?.loss_if_returned ?? p.data.estimated_return_cost ?? 0, p.data.currency)}</b></span><span><small>Settle</small><b>{money(p.data.refund_amount || 0, p.data.currency)}</b></span><strong>+{money(p.data.estimated_savings || 0, p.data.currency)} saved</strong></div>,
     },
     {
       field: 'status', headerName: 'RESOLUTION', flex: .85, minWidth: compactGrid ? 118 : 150,
@@ -414,6 +414,10 @@ export function DecisionAnalysisModal({
   const returnCost = fin?.estimated_return_cost ?? decision.estimated_return_cost
   const refundAmt = fin?.proposed_refund ?? decision.refund_amount
   const netSavings = fin?.net_savings ?? decision.estimated_savings
+  const lostMargin = fin?.lost_margin ?? 0
+  const lossIfReturned = fin?.loss_if_returned ?? returnCost
+  const expectedLoss = fin?.expected_loss ?? lossIfReturned * (decision.return_probability || 0)
+  const signedMoney = (value: number) => `${value < 0 ? '−' : '+'}${money(Math.abs(value), decision.currency)}`
   const evidenceLabel = decision.evidence_source === 'demo_offer_fixture' ? 'Saved demo offer' : 'Live Channel3 offer'
   const paypalDraft = `Hi ${decision.buyer_name || 'there'}, thank you for shopping with us! We appreciate you reaching out under our price guarantee. We've credited ${money(refundAmt, decision.currency)} directly to your PayPal account to match the competitor price, so you can keep enjoying your purchase without returning it.`
 
@@ -506,32 +510,34 @@ export function DecisionAnalysisModal({
             </div>
 
             <div className="modal-metric-card highlight-card">
-              <span className="card-label">MERCHANT MARGIN PROTECTED</span>
+              <span className="card-label">EXPECTED SAVING VS A RETURN</span>
               <div className="metric-score">
-                <span className="score-num savings-num">+{money(netSavings, decision.currency)}</span>
+                <span className="score-num savings-num" data-testid="expected-saving">{signedMoney(netSavings)}</span>
               </div>
-              <span className="card-hint">Net saved compared to physical return logistics</span>
+              <span className="card-hint">{probPercent}% × {money(lossIfReturned, decision.currency)} likely loss, minus the refund</span>
             </div>
           </div>
 
           {/* SIDE BY SIDE FINANCIAL COSTING */}
           <div className="modal-section">
-            <h3><WalletCards size={16} /> Cost of Physical Return vs Proactive Difference Settlement</h3>
+            <h3><WalletCards size={16} /> If the buyer returns it vs refunding the difference</h3>
             <div className="financial-comparison-grid">
               <div className="fin-col return-col">
-                <div className="fin-col-title">COST OF FULL PHYSICAL RETURN</div>
+                <div className="fin-col-title">IF THE BUYER RETURNS AND REBUYS ELSEWHERE</div>
                 <div className="fin-row"><span>Reverse shipping estimate</span><b>{money(fin?.reverse_shipping ?? 24, decision.currency)}</b></div>
                 <div className="fin-row"><span>Restocking & inspection</span><b>{money(fin?.restocking_cost ?? (decision.purchase_price || 0) * 0.15, decision.currency)}</b></div>
                 <div className="fin-row"><span>Open-box markdown</span><b>{money(fin?.open_box_loss ?? (decision.purchase_price || 0) * 0.25, decision.currency)}</b></div>
-                <div className="fin-total-row"><span>Total Physical Return Loss</span><b>{money(returnCost, decision.currency)}</b></div>
+                <div className="fin-row"><span>Lost sale (gross margin)</span><b>{money(lostMargin, decision.currency)}</b></div>
+                <div className="fin-total-row"><span>Loss if returned</span><b>{money(lossIfReturned, decision.currency)}</b></div>
+                <div className="fin-row"><span>× {probPercent}% return risk = expected loss</span><b>{money(expectedLoss, decision.currency)}</b></div>
               </div>
 
               <div className="fin-col refund-col">
-                <div className="fin-col-title">PROACTIVE DIFFERENCE SETTLEMENT</div>
-                <div className="fin-row"><span>Direct Price Delta Credit</span><b>{money(refundAmt, decision.currency)}</b></div>
-                <div className="fin-row"><span>Customer Keeps Item (No Freight)</span><b>$0.00 Freight</b></div>
-                <div className="fin-row"><span>No Warehouse Restocking</span><b>$0.00 Restock</b></div>
-                <div className="fin-total-row highlight-row"><span>Net Merchant Margin Saved</span><b>+{money(netSavings, decision.currency)}</b></div>
+                <div className="fin-col-title">REFUND THE DIFFERENCE, KEEP THE SALE</div>
+                <div className="fin-row"><span>PayPal refund of the difference</span><b>{money(refundAmt, decision.currency)}</b></div>
+                <div className="fin-row"><span>Return shipping, restocking, markdown</span><b>$0.00</b></div>
+                <div className="fin-row"><span>Sale kept</span><b>{money(lostMargin, decision.currency)} margin</b></div>
+                <div className="fin-total-row highlight-row"><span>Expected saving</span><b>{signedMoney(netSavings)}</b></div>
               </div>
             </div>
           </div>

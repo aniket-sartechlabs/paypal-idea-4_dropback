@@ -97,7 +97,22 @@ async def click_first(page: Page, selectors: tuple[str, ...], label: str | None 
     return False
 
 
-async def approve_sandbox_page(page: Page, email: str, password: str) -> None:
+async def _on_guest_checkout(page: Page) -> bool:
+    """PayPal sometimes opens 'Check out as a guest' instead of the login form."""
+    for frame in page.frames:
+        try:
+            if "check out as a guest" in (await frame.locator("body").inner_text(timeout=500)).lower():
+                for candidate in (frame.get_by_role("link", name=re.compile(r"^\s*log in\s*$", re.I)),
+                                  frame.get_by_role("button", name=re.compile(r"^\s*log in\s*$", re.I))):
+                    if await candidate.count():
+                        await candidate.first.click(timeout=8000)
+                        return True
+        except Exception:
+            continue
+    return False
+
+
+async def approve_sandbox_page(page: Page, email: str, password: str, _attempt: int = 0) -> None:
     try:
         await page.wait_for_load_state("domcontentloaded", timeout=30000)
     except PlaywrightTimeout:
@@ -148,7 +163,13 @@ async def approve_sandbox_page(page: Page, email: str, password: str) -> None:
     )
     deadline = time.monotonic() + 45
     while time.monotonic() < deadline:
-        if await click_first(page, selectors, r"agree|continue|pay now|complete purchase|confirm|approve"):
+        if await _on_guest_checkout(page):
+            if _attempt >= 2:
+                raise RuntimeError("PayPal Sandbox kept showing guest checkout; no payment was captured by the runner.")
+            print("  PayPal showed guest checkout; switching to buyer login.", flush=True)
+            await page.wait_for_timeout(1500)
+            return await approve_sandbox_page(page, email, password, _attempt + 1)
+        if await click_first(page, selectors, r"agree|^\s*continue\s*$|continue to review|pay now|^\s*pay\s*$|complete purchase|confirm|approve|^\s*zahlen\s*$|jetzt zahlen|weiter|zustimmen"):
             print("  PayPal Sandbox buyer approved the checkout.", flush=True)
             return
         for frame in page.frames:
@@ -159,7 +180,33 @@ async def approve_sandbox_page(page: Page, email: str, password: str) -> None:
             except Exception:
                 pass
         await page.wait_for_timeout(350)
+    try:
+        await page.screenshot(path=str(ROOT / "video-out" / "paypal_approval_failed.png"))
+    except Exception:
+        pass
     raise RuntimeError("PayPal Sandbox approval control did not appear; no payment was captured by the runner.")
+
+
+def redaction_script(buyer_email: str) -> str:
+    """Init script: mask PayPal input values and replace the buyer email anywhere on screen."""
+    buyer_email = json.dumps(buyer_email)
+    return f"""(() => {{
+          if (location.hostname.toLowerCase().endsWith('paypal.com')) {{
+            const css = document.createElement('style');
+            css.textContent = 'input,textarea,[id*=email],[data-testid*=email]{{-webkit-text-fill-color:transparent!important;color:transparent!important;text-shadow:0 0 7px #738198!important;caret-color:transparent!important}}';
+            (document.head || document.documentElement).appendChild(css);
+          }}
+          const redactRoot = root => {{
+            const target = {buyer_email};
+            if (!target) return;
+            const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+            let node; while ((node = walker.nextNode())) {{ if (!node.nodeValue) continue; const index = node.nodeValue.toLowerCase().indexOf(target.toLowerCase()); if (index >= 0) node.nodeValue = node.nodeValue.slice(0, index) + 'Sandbox buyer' + node.nodeValue.slice(index + target.length); }}
+            root.querySelectorAll?.('*').forEach(el => {{ if (el.shadowRoot) redactRoot(el.shadowRoot); }});
+          }};
+          const redact = () => redactRoot(document.body || document.documentElement);
+          new MutationObserver(redact).observe(document.documentElement, {{childList:true,subtree:true,characterData:true}});
+          redact(); setInterval(redact, 250);
+        }})();"""
 
 
 async def wait_for_paypal_frame(page: Page, timeout_seconds: int = 45) -> None:
@@ -297,24 +344,7 @@ async def run_browser(settings: Settings, channel3_signal: dict[str, Any], headl
             record_video_dir=str(RECORDINGS),
             record_video_size={"width": 1920, "height": 1080},
         )
-        buyer_email = json.dumps(settings.paypal_sandbox_buyer_email)
-        await context.add_init_script(f"""(() => {{
-          if (location.hostname.toLowerCase().endsWith('paypal.com')) {{
-            const css = document.createElement('style');
-            css.textContent = 'input,textarea,[id*=email],[data-testid*=email]{{-webkit-text-fill-color:transparent!important;color:transparent!important;text-shadow:0 0 7px #738198!important;caret-color:transparent!important}}';
-            (document.head || document.documentElement).appendChild(css);
-          }}
-          const redactRoot = root => {{
-            const target = {buyer_email};
-            if (!target) return;
-            const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-            let node; while ((node = walker.nextNode())) {{ if (!node.nodeValue) continue; const index = node.nodeValue.toLowerCase().indexOf(target.toLowerCase()); if (index >= 0) node.nodeValue = node.nodeValue.slice(0, index) + 'Sandbox buyer' + node.nodeValue.slice(index + target.length); }}
-            root.querySelectorAll?.('*').forEach(el => {{ if (el.shadowRoot) redactRoot(el.shadowRoot); }});
-          }};
-          const redact = () => redactRoot(document.body || document.documentElement);
-          new MutationObserver(redact).observe(document.documentElement, {{childList:true,subtree:true,characterData:true}});
-          redact(); setInterval(redact, 250);
-        }})();""")
+        await context.add_init_script(redaction_script(settings.paypal_sandbox_buyer_email))
         page = await context.new_page()
         # Align scene offsets with the page video; browser startup happens
         # before its recording timeline begins.

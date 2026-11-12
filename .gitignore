@@ -52,3 +52,4 @@ demo-video/clips/*.mp4
 .vscode/
 *.swp
 *.swo
+video-out/

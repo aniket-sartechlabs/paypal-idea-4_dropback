@@ -15,7 +15,7 @@ from app.config import get_settings
 from app.deps import Db
 from app.models.entities import Capture, Product, Refund, WebhookReceipt
 from app.serializers import add_action, as_decimal
-from app.services import claims
+from app.services import claims, onboarding
 from app.services.channel3 import Channel3Error, channel3
 from app.services.paypal import PayPalError, paypal
 from app.routes.catalog import clear_channel3_link
@@ -47,6 +47,12 @@ async def paypal_webhook(request: Request, db: Db):
         capture = db.scalar(select(Capture).where(Capture.paypal_capture_id == resource.get("id")))
         if capture:
             capture.status = "COMPLETED"
+        else:
+            # A payment from the merchant's own checkout: bring the order under price protection.
+            order_id = ((resource.get("supplementary_data") or {}).get("related_ids") or {}).get("order_id")
+            if order_id:
+                db.commit()  # keep the receipt even if the import below returns early
+                await onboarding.import_paypal_order(db, str(order_id), source="paypal_webhook")
     elif event_type in {"PAYMENT.REFUND.COMPLETED", "PAYMENT.CAPTURE.REFUNDED"}:
         refund = db.scalar(select(Refund).where(Refund.paypal_refund_id == resource.get("id")))
         if refund:

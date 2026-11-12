@@ -1,0 +1,694 @@
+{
+ "title": "DropBack: refund the price drop, keep the sale",
+ "brand": "DropBack",
+ "brandPatch": false,
+ "voice": "marin",
+ "instructions": "Voice: a confident, warm product-launch narrator. Pace: brisk but clear, like a polished startup demo video. Short natural pauses at full stops. Slight emphasis on the dollar amounts and on the product name DropBack.",
+ "output": "dropback-demo.mp4",
+ "acts": [
+  "DropBack",
+  "The problem",
+  "Live demo",
+  "Why it matters"
+ ],
+ "scenes": [
+  {
+   "id": "D01",
+   "act": 0,
+   "theme": "midnight",
+   "chapter": "// PayPal AI Hackathon 2026",
+   "counter": null,
+   "hold": 0.6,
+   "say": "[confident] This is DropBack. … When the price drops, your customer KEEPS the item… and you keep the sale.",
+   "caption": "",
+   "visual": {
+    "type": "title",
+    "tagline": "<em>Price drops.</em> The sale stays.",
+    "sub": "14-day price protection for PayPal merchants",
+    "pills": [
+     "PayPal",
+     "Channel3",
+     "AG Grid",
+     "APIMatic",
+     "OpenAI"
+    ],
+    "cue": "When",
+    "subCue": "customer",
+    "pillsCue": "sale"
+   },
+   "vo": "This is DropBack. When the price drops, your customer keeps the item and you keep the sale."
+  },
+  {
+   "id": "D02",
+   "act": 1,
+   "theme": "paper",
+   "chapter": "// the problem",
+   "say": "[serious] Last year, American shoppers sent back $890 billion of merchandise. … Almost seventeen percent of everything they bought.",
+   "caption": "Shoppers sent back *$890 billion* of merchandise. / Almost *17%* of everything they bought.",
+   "visual": {
+    "type": "stat",
+    "value": 890,
+    "suffix": "B",
+    "label": "*$890 billion* in US retail returns, 2024",
+    "sub": "16.9% of all retail sales",
+    "subCue": "seventeen",
+    "source": "NRF & Happy Returns, 2024 Consumer Returns report",
+    "cue": "$890"
+   },
+   "vo": "Last year, American shoppers sent back $890 billion of merchandise. Almost seventeen percent of everything they bought."
+  },
+  {
+   "id": "D03",
+   "act": 1,
+   "theme": "paper",
+   "chapter": "// the problem",
+   "say": "And some returns have NOTHING to do with the product. A shopper pays $398. Days later, it's $319.99 somewhere else. … So they send it back, and buy it again… cheaper.",
+   "caption": "Some returns have *nothing to do with the product.* / Pays *$398.* Days later it's *$319.99* elsewhere. / So they send it back… and *buy it again, cheaper.*",
+   "visual": {
+    "type": "flow",
+    "nodes": [
+     {
+      "k": "DAY 0",
+      "text": "Buys for $398",
+      "sub": "at your store",
+      "cue": "pays"
+     },
+     {
+      "k": "DAY 3",
+      "text": "Sees $319.99",
+      "sub": "at another retailer",
+      "cue": "later"
+     },
+     {
+      "k": "RETURN",
+      "text": "Sends it back",
+      "sub": "full refund",
+      "cue": "send"
+     },
+     {
+      "k": "REBUY",
+      "text": "Buys it again",
+      "sub": "somewhere else",
+      "cue": "again"
+     }
+    ]
+   },
+   "vo": "And some returns have nothing to do with the product. A shopper pays $398. Days later, it's $319.99 somewhere else. So they send it back, and buy it again cheaper."
+  },
+  {
+   "id": "D04",
+   "act": 1,
+   "theme": "paper",
+   "chapter": "// the problem",
+   "say": "[thoughtful] For the merchant, that return costs FAR more than the difference. Return shipping, restocking, an open-box markdown, and the profit on a sale that's gone… about $291… to avoid a $78.01 gap.",
+   "caption": "That return costs *far more than the difference.* / Shipping, restocking, open-box, the lost sale: *about $291* / to avoid a *$78.01* gap.",
+   "visual": {
+    "type": "compare",
+    "left": {
+     "title": "A full *return*",
+     "cue": "return",
+     "stamp": "−$291",
+     "stampCue": "about",
+     "items": [
+      {
+       "text": "Return shipping",
+       "cue": "shipping"
+      },
+      {
+       "text": "Restocking & inspection",
+       "cue": "restocking"
+      },
+      {
+       "text": "Open-box markdown",
+       "cue": "open"
+      },
+      {
+       "text": "The sale is lost",
+       "cue": "profit"
+      }
+     ]
+    },
+    "right": {
+     "title": "Refund the *difference*",
+     "cue": "difference",
+     "mark": "ok",
+     "stamp": "−$78.01",
+     "stampCue": "gap",
+     "items": [
+      {
+       "text": "Buyer keeps the item",
+       "ok": true,
+       "cue": "gap"
+      },
+      {
+       "text": "One partial PayPal refund",
+       "ok": true,
+       "cue": "gap"
+      },
+      {
+       "text": "The sale stays",
+       "ok": true,
+       "cue": "gap"
+      }
+     ]
+    }
+   },
+   "vo": "For the merchant, that return costs far more than the difference. Return shipping, restocking, an open-box markdown, and the profit on a sale that's gone about $291 to avoid a $78.01 gap."
+  },
+  {
+   "id": "D05",
+   "act": 1,
+   "theme": "paper",
+   "chapter": "// the problem",
+   "say": "Some stores offer price matching. But checking rival prices by hand is slow… and most shoppers never even know the policy exists.",
+   "caption": "Price matching exists. But checking rival prices *by hand is slow,* / and *most shoppers never know* the policy exists.",
+   "visual": {
+    "type": "headline",
+    "meta": "Checkbook.org · survey of retailer price-adjustment policies",
+    "title": "Most shoppers are <em style=\"font-style:inherit;color:var(--accent)\">unaware</em> price adjustments exist, because few retailers advertise them.",
+    "cue": "most"
+   },
+   "vo": "Some stores offer price matching. But checking rival prices by hand is slow and most shoppers never even know the policy exists."
+  },
+  {
+   "id": "D06",
+   "act": 2,
+   "theme": "midnight",
+   "chapter": "// how DropBack works",
+   "say": "[warmly] DropBack is fourteen-day price protection for PayPal merchants. It plugs into the checkout they already have. Channel3 checks the live price. AI weighs a refund against a likely return. And the merchant sends a PayPal refund… in ONE click.",
+   "caption": "*DropBack:* 14-day price protection for PayPal merchants. / It plugs into the *checkout they already have.* / *Channel3* checks the price, *AI* weighs refund vs. return, the merchant *refunds in one click.*",
+   "visual": {
+    "type": "flow",
+    "nodes": [
+     {
+      "k": "01",
+      "text": "Connect PayPal",
+      "sub": "the merchant's own account",
+      "cue": "plugs"
+     },
+     {
+      "k": "02",
+      "text": "Channel3",
+      "sub": "live price, exact model",
+      "cue": "Channel3"
+     },
+     {
+      "k": "03",
+      "text": "AI case report",
+      "sub": "refund vs. return",
+      "cue": "AI"
+     },
+     {
+      "k": "04",
+      "text": "Merchant approves",
+      "sub": "AG Grid claims queue",
+      "cue": "merchant"
+     },
+     {
+      "k": "05",
+      "text": "PayPal refund",
+      "sub": "Payments v2, idempotent",
+      "cue": "refund"
+     }
+    ]
+   },
+   "vo": "DropBack is fourteen-day price protection for PayPal merchants. It plugs into the checkout they already have. Channel3 checks the live price. AI weighs a refund against a likely return. And the merchant sends a PayPal refund in one click."
+  },
+  {
+   "id": "S01",
+   "act": 2,
+   "theme": "midnight",
+   "chapter": "// merchant setup",
+   "say": "[upbeat] Here it is, live in PayPal Sandbox. A merchant joins in a couple of minutes. They create a workspace for their store…",
+   "caption": "Live in *PayPal Sandbox.* A merchant joins in *a couple of minutes:* / they create a workspace for their store.",
+   "visual": {
+    "type": "rec",
+    "src": "rec_live/live.webm",
+    "url": "localhost:5173/login · Create workspace",
+    "badge": "Merchant onboarding",
+    "boxes": [
+     {
+      "cue": "workspace",
+      "x": 0.6456,
+      "y": 0.3435,
+      "w": 0.2406,
+      "h": 0.3578
+     }
+    ],
+    "from": 1.09,
+    "to": 15.11
+   },
+   "vo": "Here it is, live in PayPal Sandbox. A merchant joins in a couple of minutes. They create a workspace for their store"
+  },
+  {
+   "id": "S02",
+   "act": 2,
+   "theme": "midnight",
+   "chapter": "// merchant setup · PayPal",
+   "say": "…and connect their own PayPal account. DropBack checks the keys with PayPal and encrypts the secret. From then on, paid orders from their checkout flow in by webhook.",
+   "caption": "They connect *their own PayPal account.* Keys verified, secret *encrypted.* / Paid orders from their checkout *flow in by webhook.*",
+   "visual": {
+    "type": "rec",
+    "src": "rec_live/live.webm",
+    "url": "localhost:5173/setup · Connect PayPal",
+    "badge": "Merchant onboarding",
+    "boxes": [
+     {
+      "cue": "checkout",
+      "x": 0.336,
+      "y": 0.3024,
+      "w": 0.6304,
+      "h": 0.0415
+     },
+     {
+      "cue": "webhook",
+      "x": 0.336,
+      "y": 0.5213,
+      "w": 0.6304,
+      "h": 0.0722
+     }
+    ],
+    "from": 15.11,
+    "to": 21.64
+   },
+   "vo": "and connect their own PayPal account. DropBack checks the keys with PayPal and encrypts the secret. From then on, paid orders from their checkout flow in by webhook."
+  },
+  {
+   "id": "S03",
+   "act": 2,
+   "theme": "midnight",
+   "chapter": "// merchant setup · policy",
+   "say": "They pick the retailers they'll price-match, keep the refund limits… and turn protection on.",
+   "caption": "They pick the *retailers they'll match,* keep the refund limits, / and *turn protection on.*",
+   "visual": {
+    "type": "rec",
+    "src": "rec_live/live.webm",
+    "url": "localhost:5173/setup · Policy & go live",
+    "badge": "Merchant onboarding",
+    "boxes": [
+     {
+      "cue": "retailers",
+      "x": 0.336,
+      "y": 0.2909,
+      "w": 0.6304,
+      "h": 0.1648
+     },
+     {
+      "cue": "protection",
+      "x": 0.336,
+      "y": 0.2909,
+      "w": 0.6304,
+      "h": 0.0659
+     }
+    ],
+    "from": 21.64,
+    "to": 31.17
+   },
+   "vo": "They pick the retailers they'll price-match, keep the refund limits and turn protection on."
+  },
+  {
+   "id": "R01",
+   "act": 2,
+   "theme": "midnight",
+   "chapter": "// live · the buyer",
+   "say": "Now a shopper picks Sony headphones in the Holloway store… $398, covered for 14 days.",
+   "caption": "A shopper picks *Sony headphones*: / *$398*, covered for *14 days.*",
+   "visual": {
+    "type": "rec",
+    "src": "rec_live/live.webm",
+    "url": "localhost:5173/store · Holloway Goods",
+    "badge": "LIVE · PayPal Sandbox",
+    "boxes": [
+     {
+      "cue": "Sony",
+      "x": 0.1452,
+      "y": 0.1478,
+      "w": 0.2267,
+      "h": 0.3993
+     }
+    ],
+    "from": 34.47,
+    "to": 41.44
+   },
+   "vo": "Now a shopper picks Sony headphones in the Holloway store $398, covered for 14 days."
+  },
+  {
+   "id": "R02",
+   "act": 2,
+   "theme": "midnight",
+   "chapter": "// step 1 · checkout",
+   "say": "They check out with PayPal. DropBack creates the order through PayPal's Server SDK.",
+   "caption": "They check out *with PayPal.* / The order is created through *PayPal's Server SDK.*",
+   "visual": {
+    "type": "rec",
+    "src": "rec_live/live.webm",
+    "url": "localhost:5173/store · Checkout",
+    "badge": "LIVE · PayPal Sandbox",
+    "boxes": [
+     {
+      "cue": "PayPal",
+      "x": 0.5837,
+      "y": 0.7771,
+      "w": 0.1654,
+      "h": 0.0478
+     }
+    ],
+    "from": 41.44,
+    "to": 50.02
+   },
+   "vo": "They check out with PayPal. DropBack creates the order through PayPal's Server SDK."
+  },
+  {
+   "id": "R03",
+   "act": 2,
+   "theme": "midnight",
+   "chapter": "// step 1 · checkout",
+   "say": "The buyer signs in to PayPal, and approves. The payment is captured.",
+   "caption": "The buyer signs in to PayPal *and approves.* / The payment is *captured.*",
+   "visual": {
+    "type": "rec",
+    "src": "rec_live/live.webm",
+    "url": "PayPal Sandbox checkout",
+    "badge": "LIVE · PayPal Sandbox",
+    "from": 50.02,
+    "to": 117.83,
+    "boxes": []
+   },
+   "vo": "The buyer signs in to PayPal, and approves. The payment is captured."
+  },
+  {
+   "id": "R04",
+   "act": 2,
+   "theme": "midnight",
+   "chapter": "// step 2 · day 3 · price check",
+   "say": "Day three. The buyer opens their order… and checks the live market price.",
+   "caption": "*Day three.* The buyer opens their order / and checks the *live market price.*",
+   "visual": {
+    "type": "rec",
+    "src": "rec_live/live.webm",
+    "url": "localhost:5173/portal · Your orders",
+    "badge": "Accelerated: day 3 of 14",
+    "boxes": [
+     {
+      "cue": "order",
+      "x": 0.1812,
+      "y": 0.5572,
+      "w": 0.6375,
+      "h": 0.3911
+     },
+     {
+      "cue": "live",
+      "x": 0.674,
+      "y": 0.8591,
+      "w": 0.1189,
+      "h": 0.0456
+     }
+    ],
+    "from": 116.33,
+    "to": 124.86
+   },
+   "vo": "Day three. The buyer opens their order and checks the live market price."
+  },
+  {
+   "id": "R05",
+   "act": 2,
+   "theme": "midnight",
+   "chapter": "// step 2 · Channel3",
+   "say": "Channel3 finds the EXACT same model, in stock, at beachcamera.com… for $319.99. That's $78.01 less.",
+   "caption": "*Channel3* finds the exact same model, in stock, / at *beachcamera.com* for *$319.99.* That's *$78.01 less.*",
+   "visual": {
+    "type": "rec",
+    "src": "rec_live/live.webm",
+    "url": "localhost:5173/portal · Price check",
+    "badge": "LIVE · Channel3",
+    "boxes": [
+     {
+      "cue": "Channel3",
+      "x": 0.1906,
+      "y": 0.6076,
+      "w": 0.6092,
+      "h": 0.3026
+     },
+     {
+      "cue": "less",
+      "x": 0.7326,
+      "y": 0.638,
+      "w": 0.0543,
+      "h": 0.0252
+     }
+    ],
+    "from": 124.86,
+    "to": 130.89
+   },
+   "vo": "Channel3 finds the exact same model, in stock, at beachcamera.com for $319.99. That's $78.01 less."
+  },
+  {
+   "id": "R06",
+   "act": 2,
+   "theme": "midnight",
+   "chapter": "// step 2 · the request",
+   "say": "Instead of sending it back… they ask for the difference.",
+   "caption": "Instead of sending it back, / they *ask for the difference.*",
+   "visual": {
+    "type": "rec",
+    "src": "rec_live/live.webm",
+    "url": "localhost:5173/portal · Request",
+    "badge": "LIVE · PayPal Sandbox",
+    "boxes": [
+     {
+      "cue": "ask",
+      "x": 0.6599,
+      "y": 0.8406,
+      "w": 0.127,
+      "h": 0.0456
+     },
+     {
+      "cue": "difference",
+      "off": 0.6,
+      "x": 0.1906,
+      "y": 0.5895,
+      "w": 0.6092,
+      "h": 0.2218
+     }
+    ],
+    "from": 130.89,
+    "to": 142.23
+   },
+   "vo": "Instead of sending it back they ask for the difference."
+  },
+  {
+   "id": "R07",
+   "act": 2,
+   "theme": "midnight",
+   "chapter": "// step 3 · merchant review",
+   "say": "On the merchant side, every request lands in AG Grid: the buyer, the live offer, and the refund… versus the cost of a return.",
+   "caption": "Every request lands in *AG Grid:* / the buyer, the live offer, and the *refund vs. the cost of a return.*",
+   "visual": {
+    "type": "rec",
+    "src": "rec_live/live.webm",
+    "url": "localhost:5173/claims · Claims & disputes",
+    "badge": "AG Grid",
+    "boxes": [],
+    "from": 142.83,
+    "to": 150.55
+   },
+   "vo": "On the merchant side, every request lands in AG Grid: the buyer, the live offer, and the refund versus the cost of a return."
+  },
+  {
+   "id": "R08",
+   "act": 2,
+   "theme": "midnight",
+   "chapter": "// step 3 · AI case report",
+   "say": "The AI case report puts the return risk at 52 percent. Counting the lost sale, a return would cost about $291… so refunding $78.01 saves about $72 on average. [firm] Policy limits are NEVER left to the model.",
+   "caption": "Return risk *52%.* A return, counting the lost sale: *about $291.* / Refunding $78.01 saves *about $72* on average. *Limits never left to the model.*",
+   "visual": {
+    "type": "rec",
+    "src": "rec_live/live.webm",
+    "url": "localhost:5173/claims · Case report",
+    "badge": "AI case report",
+    "boxes": [
+     {
+      "cue": "risk",
+      "x": 0.2794,
+      "y": 0.4426,
+      "w": 0.4221,
+      "h": 0.1158
+     },
+     {
+      "cue": "saves",
+      "x": 0.2794,
+      "y": 0.4325,
+      "w": 0.4221,
+      "h": 0.1956
+     }
+    ],
+    "from": 150.55,
+    "to": 162.19
+   },
+   "vo": "The AI case report puts the return risk at 52 percent. Counting the lost sale, a return would cost about $291 so refunding $78.01 saves about $72 on average. Policy limits are never left to the model."
+  },
+  {
+   "id": "R09",
+   "act": 2,
+   "theme": "midnight",
+   "chapter": "// step 4 · PayPal refund",
+   "say": "The merchant approves. PayPal refunds $78.01 to the original payment… with an idempotency key, so it can NEVER pay twice.",
+   "caption": "The merchant approves. PayPal refunds *$78.01* to the original payment, / with an *idempotency key,* so it can *never pay twice.*",
+   "visual": {
+    "type": "rec",
+    "src": "rec_live/live.webm",
+    "url": "localhost:5173/claims · Approve",
+    "badge": "PayPal Payments v2",
+    "boxes": [
+     {
+      "cue": "approves",
+      "x": 0.5701,
+      "y": 0.8881,
+      "w": 0.141,
+      "h": 0.0456
+     }
+    ],
+    "from": 162.19,
+    "to": 173.51
+   },
+   "vo": "The merchant approves. PayPal refunds $78.01 to the original payment with an idempotency key, so it can never pay twice."
+  },
+  {
+   "id": "R10",
+   "act": 2,
+   "theme": "midnight",
+   "chapter": "// step 4 · the buyer",
+   "say": "[warmly] The buyer sees it right away. Refund credited. They keep their headphones… and the merchant keeps the sale.",
+   "caption": "Refund *credited.* They keep their headphones, / and the merchant *keeps the sale.*",
+   "visual": {
+    "type": "rec",
+    "src": "rec_live/live.webm",
+    "url": "localhost:5173/portal · Your orders",
+    "badge": "Refund completed",
+    "boxes": [
+     {
+      "cue": "Refund",
+      "x": 0.1906,
+      "y": 0.6413,
+      "w": 0.6092,
+      "h": 0.2687
+     }
+    ],
+    "from": 173.91,
+    "to": 182.39
+   },
+   "vo": "The buyer sees it right away. Refund credited. They keep their headphones and the merchant keeps the sale."
+  },
+  {
+   "id": "R11",
+   "act": 2,
+   "theme": "midnight",
+   "chapter": "// the merchant's view",
+   "say": "The overview tracks every refund… and the returns it avoided.",
+   "caption": "The overview tracks *every refund,* / and the *returns it avoided.*",
+   "visual": {
+    "type": "rec",
+    "src": "rec_live/live.webm",
+    "url": "localhost:5173 · Overview",
+    "badge": "Merchant console",
+    "from": 182.39,
+    "to": 190.39,
+    "boxes": []
+   },
+   "vo": "The overview tracks every refund and the returns it avoided."
+  },
+  {
+   "id": "R12",
+   "act": 2,
+   "theme": "midnight",
+   "chapter": "// built on PayPal",
+   "say": "Every PayPal call runs through the APIMatic-generated PayPal Server SDK. And AI agents can read the claims… through DropBack's own MCP server.",
+   "caption": "Every PayPal call runs through the *APIMatic-generated PayPal Server SDK.* / AI agents read claims through DropBack's *MCP server.*",
+   "visual": {
+    "type": "rec",
+    "src": "rec_live/live.webm",
+    "url": "localhost:5173/apimatic · PayPal API lab",
+    "badge": "PayPal Server SDK · MCP",
+    "boxes": [
+     {
+      "cue": "Server",
+      "x": 0.17,
+      "y": 0.3206,
+      "w": 0.3388,
+      "h": 0.6794
+     },
+     {
+      "cue": "MCP",
+      "x": 0.2171,
+      "y": 0.9735,
+      "w": 0.2734,
+      "h": 0.0148
+     }
+    ],
+    "from": 190.89,
+    "to": 199.94
+   },
+   "vo": "Every PayPal call runs through the APIMatic-generated PayPal Server SDK. And AI agents can read the claims through DropBack's own MCP server."
+  },
+  {
+   "id": "D20",
+   "act": 3,
+   "theme": "midnight",
+   "chapter": "// why it matters",
+   "say": "[confident] Fewer returns. Happier buyers. And the money… stays on PayPal.",
+   "caption": "",
+   "visual": {
+    "type": "big3",
+    "items": [
+     {
+      "title": "Fewer *returns*",
+      "sub": "refund the gap, not the box",
+      "cue": "Fewer"
+     },
+     {
+      "title": "Happier *buyers*",
+      "sub": "they keep what they chose",
+      "cue": "Happier"
+     },
+     {
+      "title": "Stays on *PayPal*",
+      "sub": "the sale and the refund",
+      "cue": "stays"
+     }
+    ]
+   },
+   "vo": "Fewer returns. Happier buyers. And the money stays on PayPal."
+  },
+  {
+   "id": "D21",
+   "act": 3,
+   "theme": "midnight",
+   "chapter": "// PayPal AI Hackathon 2026",
+   "hold": 1.4,
+   "say": "DropBack, by Sartech Labs. Built on PayPal.",
+   "caption": "",
+   "visual": {
+    "type": "end",
+    "title": "Refund the *drop.* Keep the *sale.*",
+    "sub": "DropBack · by Sartech Labs",
+    "pills": [
+     "PayPal Server SDK",
+     "Channel3",
+     "AG Grid",
+     "APIMatic",
+     "MCP"
+    ],
+    "repo": "github.com/aniket-sartechlabs/paypal-idea-4_dropback"
+   },
+   "vo": "DropBack, by Sartech Labs. Built on PayPal."
+  }
+ ],
+ "facts": {
+  "paypal_order_id": "79T93394DH6043614",
+  "capture_id": "1SY70003N4069663M",
+  "paypal_refund_id": "4YU858048D531580R",
+  "claim_id": "960e203d-16de-4604-b72f-ba1bcfc31568",
+  "provider": "openai",
+  "model": "gpt-4.1-mini"
+ }
+}

@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from app.config import get_settings
 from app.security import require_local_request
+from app.services.paypal import paypal
 
 router = APIRouter(prefix="/api/v1")
 settings = get_settings()
@@ -18,7 +19,7 @@ _demo_process: subprocess.Popen | None = None
 
 @router.get("/health")
 def health():
-    return {"status": "ok", "environment": settings.environment, "paypal_configured": settings.paypal_ready,
+    return {"status": "ok", "environment": settings.environment, "paypal_configured": paypal.ready,
             "paypal_environment": settings.paypal_env, "channel3_configured": bool(settings.channel3_api_key),
             "channel3_webhook_configured": bool(settings.channel3_webhook_secret),
             "llm_configured": bool(settings.openai_api_key or settings.gemini_api_key),
@@ -32,7 +33,7 @@ def start_sandbox_demo(request: Request):
     require_local_request(request)
     if settings.is_production or settings.paypal_env.lower() != "sandbox":
         raise HTTPException(503, "The automated purchase walkthrough is restricted to PayPal Sandbox development.")
-    if not settings.paypal_ready or not settings.paypal_sandbox_buyer_email or not settings.paypal_sandbox_buyer_password or not settings.channel3_api_key:
+    if not paypal.ready or not settings.paypal_sandbox_buyer_email or not settings.paypal_sandbox_buyer_password or not settings.channel3_api_key:
         raise HTTPException(503, "Complete the PayPal Sandbox buyer, PayPal API, and Channel3 setup before launching the demo.")
     if _demo_process and _demo_process.poll() is None:
         return {"started": False, "running": True, "message": "The full Sandbox walkthrough is already running."}

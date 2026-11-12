@@ -4,6 +4,25 @@ DropBack helps a merchant retain a sale when an item becomes cheaper soon after 
 
 This prototype is designed for the PayPal AI Hackathon and demonstrates the AG Grid, Channel3, and APIMatic sponsor integrations.
 
+## How a merchant uses DropBack
+
+DropBack is an add-on to a merchant's existing PayPal checkout, not a new store.
+
+1. **Sign up** at `/login` → "Create a merchant workspace" (store name, email, password). One owner per workspace; the password is stored as a PBKDF2 hash.
+2. **Connect PayPal** in the setup wizard (`/setup`): paste the REST app client ID and secret from developer.paypal.com. DropBack verifies them with an OAuth token request, stores the secret encrypted (Fernet, keyed from `SECRET_KEY`), and runs every Orders v2 / Payments v2 call as that merchant. On a public HTTPS deployment it also registers DropBack's webhook on the merchant's app.
+3. **Orders come in from the merchant's own checkout:**
+   - `PAYMENT.CAPTURE.COMPLETED` webhooks import the paid order automatically (needs public HTTPS).
+   - A buyer can open `/portal` with their PayPal order ID and email; an order DropBack has not seen is fetched from PayPal with the merchant's credentials, so only orders paid to that merchant can be imported.
+   - The merchant can import an order by ID from the wizard (`POST /api/v1/orders/import`).
+   Items are matched to the protected catalog by SKU, then by name.
+4. **Set the policy:** protection window, per-order cap, daily budget, the retailers they price-match (empty = any in-stock new offer), and the return-cost model including gross margin.
+5. **Pick products** from the live Channel3 catalog, then **go live**: the wizard gives the buyer-portal link and a line for the order-confirmation email.
+6. **Day to day:** claims arrive in the AG Grid queue with Channel3 evidence and the AI case report; every refund needs the merchant's click.
+
+The case report compares a refund with what a return-and-rebuy costs: return shipping + restocking + open-box markdown + the margin on the lost sale, weighted by the return probability. The refund is recommended only when that expected loss exceeds it.
+
+The bundled Holloway storefront stands in for the merchant's existing store in the demo.
+
 ## The real buyer-to-merchant flow
 
 1. The buyer selects an item in the Holloway storefront and checks out through PayPal Orders v2 in Sandbox.
@@ -38,7 +57,8 @@ The Sandbox walkthrough creates a real test payment and refund in the configured
 
 ## Security model
 
-- **Merchant console:** email/password sign-in (`MERCHANT_EMAIL` / `MERCHANT_PASSWORD`), using a signed httponly cookie with rate-limited attempts.
+- **Merchant console:** the workspace owner created at sign-up, or `MERCHANT_EMAIL` / `MERCHANT_PASSWORD` from `.env`; signed httponly cookie, rate-limited attempts.
+- **Merchant PayPal credentials:** verified before saving, secret encrypted at rest, never returned by the API (the client ID is masked).
 - **Buyers:** the browser that starts a checkout can open that order. From any other browser, the buyer signs in at `/portal` with the order ID and the email on their PayPal account. Order lookup, price checks, claims, and claim status all require that buyer session (or a merchant session).
 - Channel3 search, the product catalog API, and the PayPal API lab are merchant-only. Buyer price checks are rate-limited per order and never change the merchant's catalog data.
 

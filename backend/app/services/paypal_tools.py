@@ -55,7 +55,7 @@ def status() -> dict[str, Any]:
         "sdk_version": sdk_version(),
         "sdk_generator": "APIMatic",
         "environment": settings.paypal_env,
-        "sandbox_ready": settings.paypal_ready,
+        "sandbox_ready": paypal.ready,
         "operations": SDK_OPERATIONS,
         "tools": [{k: v for k, v in tool.items() if k != "mcp"} | {"available_over_mcp": tool["mcp"]} for tool in TOOLS],
         "mcp": {

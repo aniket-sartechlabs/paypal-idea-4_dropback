@@ -64,6 +64,24 @@ class SettingsUpdate(BaseModel):
     return_shipping_cost: Decimal | None = Field(default=None, ge=0, max_digits=10, decimal_places=2)
     restocking_fee_percentage: Decimal | None = Field(default=None, ge=0, le=100, max_digits=7, decimal_places=3)
     open_box_discount_percentage: Decimal | None = Field(default=None, ge=0, le=100, max_digits=7, decimal_places=3)
+    gross_margin_percentage: Decimal | None = Field(default=None, ge=0, le=100, max_digits=7, decimal_places=3)
+    allowed_retailers: str | None = Field(default=None, max_length=2000)
+    store_url: str | None = Field(default=None, max_length=255)
+
+
+class SignupInput(BaseModel):
+    email: str = Field(min_length=3, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    password: str = Field(min_length=10, max_length=256)
+    store_name: str = Field(min_length=2, max_length=120)
+
+
+class PayPalConnectInput(BaseModel):
+    client_id: str = Field(min_length=20, max_length=255)
+    client_secret: str = Field(min_length=20, max_length=255)
+
+
+class OrderImportInput(BaseModel):
+    paypal_order_id: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9-]+$")
 
 
 class CheckPriceInput(BaseModel):

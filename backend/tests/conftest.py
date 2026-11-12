@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app import database
 from app.config import get_settings
-from app.services.channel3 import channel3
+from app.services.channel3 import channel3, retailer_allowed
 from app.services.paypal import paypal
 
 MERCHANT = {"email": "demo@dropback.local", "password": "dropback-demo"}
@@ -38,7 +38,9 @@ def app_env(tmp_path, monkeypatch):
             db.close()
 
     main.app.dependency_overrides[database.get_db] = override_get_db
+    paypal.use_merchant_credentials("", "")
     yield main.app, sessions
+    paypal.use_merchant_credentials("", "")
     main.app.dependency_overrides.clear()
     database.Base.metadata.drop_all(engine)
     engine.dispose()
@@ -103,7 +105,9 @@ def fake_channel3(monkeypatch):
     """Channel3 returns one lower in-stock offer for the exact product."""
     offer = {"price": 348.00, "merchant": "bestbuy.com", "url": "https://www.bestbuy.com/sony-xm5", "available": True, "condition": "new"}
 
-    async def search_and_compare(product_name, sku, local_price, currency):
+    async def search_and_compare(product_name, sku, local_price, currency, allowed_retailers=None):
+        if allowed_retailers and not retailer_allowed(offer["merchant"], allowed_retailers):
+            return {"matched": False, "retailer_filtered": True, "message": "No offer from an approved retailer."}
         return {"matched": True, "product_id": "ch3-sony", "title": product_name, "match_confidence": 0.98,
                 "best_offer": dict(offer), "all_offers": [dict(offer)], "lower_than_current": offer["price"] < local_price}
 

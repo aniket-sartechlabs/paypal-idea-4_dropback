@@ -10,10 +10,12 @@ from app.config import get_settings
 from app.models.entities import Product
 from app.serializers import add_action
 from app.services.claims import get_settings_row
+from app.services.onboarding import apply_saved_credentials
 
 # Columns added after the first release. A development database created before them
 # must be recreated (delete dropback.db) or upgraded with `alembic upgrade head`.
-REQUIRED_COLUMNS = {"price_drops": {"offer_merchant", "offer_url"}}
+REQUIRED_COLUMNS = {"price_drops": {"offer_merchant", "offer_url"},
+                    "merchant_settings": {"gross_margin_percentage", "allowed_retailers", "owner_password_hash", "paypal_client_secret_enc"}}
 
 DEMO_CATALOG = [
     dict(name="Sony WH-1000XM5 Wireless Noise Canceling Headphones", sku="SONY-WH1000XM5-BLK",
@@ -35,8 +37,6 @@ def check_production_settings() -> None:
     problems = []
     if not settings.secret_key or len(settings.secret_key) < 32:
         problems.append("SECRET_KEY of at least 32 characters")
-    if not settings.paypal_ready:
-        problems.append("PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET")
     if not settings.channel3_api_key:
         problems.append("CHANNEL3_API_KEY")
     if not settings.channel3_webhook_secret:
@@ -45,8 +45,6 @@ def check_production_settings() -> None:
         problems.append("PAYPAL_WEBHOOK_ID")
     if not settings.app_base_url.startswith("https://"):
         problems.append("an HTTPS APP_BASE_URL")
-    if not settings.merchant_email or not settings.merchant_password:
-        problems.append("MERCHANT_EMAIL and MERCHANT_PASSWORD")
     if problems:
         raise RuntimeError("Production requires " + "; ".join(problems) + ".")
 
@@ -78,7 +76,7 @@ def startup() -> None:
         database.Base.metadata.create_all(bind=database.engine)
     check_schema()
     with database.SessionLocal() as db:
-        get_settings_row(db)
+        apply_saved_credentials(get_settings_row(db))
         if not settings.is_production and db.scalar(select(func.count(Product.id))) == 0:
             seed_demo_catalog(db)
         db.commit()

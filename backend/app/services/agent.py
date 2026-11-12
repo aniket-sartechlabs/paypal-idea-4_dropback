@@ -70,12 +70,12 @@ def build_rule_report(
     if customer_notes:
         drivers.append("The buyer added a note to the request (shown to the merchant, not used in scoring).")
     if savings > 0:
-        drivers.append(f"Financial justification: Proactive ${refund_amount:.2f} refund saves an estimated ${savings:.2f} compared to return logistics.")
+        drivers.append(f"Financial justification: Proactive ${refund_amount:.2f} refund is ${savings:.2f} less than a return-and-rebuy (return handling plus the lost sale).")
 
     reasoning = (
         f"Actuarial analysis calculated a {probability * 100:.0f}% return likelihood for {product_name or category}. "
-        f"Settling the ${refund_amount:.2f} price difference preempts ${return_cost:.2f} in return shipping & restocking waste, "
-        f"protecting ${savings:.2f} in merchant gross margin."
+        f"Settling the ${refund_amount:.2f} price difference avoids a likely return that would cost ${return_cost:.2f} "
+        f"(return handling plus the margin on the lost sale), ${savings:.2f} more than the refund."
     )
 
     drafted_msg = generate_customer_message(buyer_name, product_name, refund_amount, competitor_name, window_days)
@@ -161,8 +161,8 @@ async def explain_decision(
         f"Protection Window: {window_days} days\n"
         f"Days Elapsed Since Purchase: {days_since_purchase} days\n"
         f"Proposed Price Match Refund: ${refund_amount:.2f}\n"
-        f"Estimated Full Return Cost (Freight + Restocking + Open-Box): ${return_cost:.2f}\n"
-        f"Projected Merchant Net Savings if Preempted: ${savings:.2f}\n"
+        f"Loss if Returned (Freight + Restocking + Open-Box + Lost Sale Margin): ${return_cost:.2f}\n"
+        f"Loss if Returned minus Refund: ${savings:.2f}\n"
         f"Deterministic Actuarial Baseline Probability: {probability:.2f}\n"
         f"<buyer_note>{safe_note}</buyer_note>\n"
     )

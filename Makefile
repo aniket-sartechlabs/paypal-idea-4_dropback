@@ -41,3 +41,16 @@ demo-video-final:
 
 submission-check:
 	$(VENV_PY) scripts/tasks.py submission-check
+
+.PHONY: video-record video-storyboard video-preview video
+video-record:
+	$(VENV_PY) demo-video/explainer/record_live.py $(ARGS)
+
+video-storyboard:
+	$(VENV_PY) demo-video/explainer/make_storyboard.py $(ARGS)
+
+video-preview:
+	$(VENV_PY) demo-video/explainer/build.py --storyboard storyboard.json --skip-voice --only-preview $(SCENES)
+
+video:
+	$(VENV_PY) demo-video/explainer/build.py --storyboard storyboard.json --skip-voice

@@ -5,7 +5,7 @@ import {
   Activity, ArrowDownRight, ArrowRight, Check, CheckCircle2,
   CircleHelp, ExternalLink, Eye, LayoutDashboard, LoaderCircle, LockKeyhole,
   LogOut, Package, Plus, RefreshCw, RotateCcw, Search, Settings2, ShieldCheck, ShoppingBag, Sparkles,
-  Store, Terminal, TrendingDown, UserRound, WalletCards, X,
+  Rocket, Store, Terminal, TrendingDown, UserRound, WalletCards, X,
 } from 'lucide-react'
 import {
   api, getDrops, getOrders, getProducts, getSettings, getStats, money,
@@ -14,6 +14,7 @@ import type { Order, PriceDrop, Product, Stats } from './types'
 import CustomerPortalPage from './CustomerPortalPage'
 import APIMaticPage from './APIMaticPage'
 import DecisionsPage from './DecisionsPage'
+import SetupPage, { getSetup } from './SetupPage'
 
 declare global {
   interface Window {
@@ -37,6 +38,7 @@ type Toast = { message: string; kind: 'success' | 'error' | 'info' }
 function App() {
   const [auth, setAuth] = useState<{ loading: boolean; authenticated: boolean; email?: string }>({ loading: true, authenticated: false })
   const [toast, setToast] = useState<Toast | null>(null)
+  const redirectAfterLogin = useRef('/')
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -56,11 +58,12 @@ function App() {
     return () => window.clearTimeout(timeout)
   }, [toast])
 
-  const onLogin = (email: string) => {
+  const onLogin = (email: string, created = false) => {
     setAuth({ loading: false, authenticated: true, email })
-    setToast({ message: 'Welcome back. Your merchant workspace is ready.', kind: 'success' })
+    setToast({ message: created ? 'Workspace created. Let’s connect your store.' : 'Welcome back. Your merchant workspace is ready.', kind: 'success' })
     const next = new URLSearchParams(location.search).get('next')
-    navigate(next?.startsWith('/') ? next : '/', { replace: true })
+    redirectAfterLogin.current = created ? '/setup' : next?.startsWith('/') ? next : '/'
+    navigate(redirectAfterLogin.current, { replace: true })
   }
   const onLogout = async () => {
     await api('/auth/logout', { method: 'POST' }).catch(() => undefined)
@@ -79,7 +82,7 @@ function App() {
       <Route path="/demo/run" element={<SandboxDemoLaunchPage />} />
       <Route path="/store" element={<Storefront publicMode toast={setToast} />} />
       <Route path="/login" element={auth.authenticated
-        ? <Navigate to={new URLSearchParams(location.search).get('next') || '/'} replace />
+        ? <Navigate to={redirectAfterLogin.current !== '/' ? redirectAfterLogin.current : new URLSearchParams(location.search).get('next') || '/'} replace />
         : <Login onLogin={onLogin} />} />
       <Route element={auth.authenticated ? <Shell email={auth.email || ''} onLogout={onLogout} /> : <Login onLogin={onLogin} />}>
         <Route path="/" element={<DashboardPage toast={setToast} />} />
@@ -90,6 +93,7 @@ function App() {
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/apimatic" element={<APIMaticPage toast={setToast} />} />
         <Route path="/settings" element={<SettingsPage toast={setToast} />} />
+        <Route path="/setup" element={<SetupPage toast={setToast} />} />
         <Route path="/checkout/return" element={<CheckoutStatus success />} />
         <Route path="/checkout/cancel" element={<CheckoutStatus success={false} />} />
       </Route>
@@ -123,7 +127,7 @@ function SandboxDemoLaunchPage() {
   return <main className="demo-launch-page"><section className="demo-launch-card"><span className="demo-launch-mark"><ShieldCheck size={22} /></span><p className="eyebrow">DROPBACK · PAYPAL SANDBOX</p><h1>{state.error ? 'Demo could not start' : state.running ? 'Full demo is running' : report?.refund_status ? 'Sandbox walkthrough complete' : 'Sandbox walkthrough stopped'}</h1><p>{state.error || state.message || 'The automated buyer flow opened in a separate browser window. Keep that window open while it signs in, approves checkout, checks Channel3, and completes merchant review.'}</p>{state.running && <div className="demo-launch-progress"><LoaderCircle size={17} className="spin" /> Running buyer checkout → price check → merchant refund</div>}{report && <div className="demo-launch-result">{report.run_error ? <b>{report.run_error}</b> : <><b>Refund status: {report.refund_status || '—'}</b><span>Captured {report.captured_amount ? money(Number(report.captured_amount)) : '—'} · live Channel3 evidence · accelerated day 3</span></>}</div>}<small>Progress log: logs/sandbox-demo-runner.log · Video: demo-video/out/screen.webm</small></section></main>
 }
 
-function Login({ onLogin }: { onLogin: (email: string) => void }) {
+function Login({ onLogin }: { onLogin: (email: string, created?: boolean) => void }) {
   const location = useLocation()
   const navigate = useNavigate()
   const [email, setEmail] = useState(import.meta.env.DEV ? 'demo@dropback.local' : '')
@@ -131,6 +135,22 @@ function Login({ onLogin }: { onLogin: (email: string) => void }) {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const [show, setShow] = useState(false)
+  const [signupOpen, setSignupOpen] = useState(false)
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin')
+  const [storeName, setStoreName] = useState('')
+
+  useEffect(() => { api<{ open: boolean }>('/auth/signup').then(r => setSignupOpen(r.open)).catch(() => undefined) }, [])
+
+  async function createWorkspace() {
+    setPending(true)
+    setError('')
+    try {
+      const result = await api<{ email: string }>('/auth/signup', { method: 'POST', body: JSON.stringify({ email, password, store_name: storeName }) })
+      onLogin(result.email, true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create the workspace.')
+    } finally { setPending(false) }
+  }
 
   async function signIn() {
     setPending(true)
@@ -145,7 +165,11 @@ function Login({ onLogin }: { onLogin: (email: string) => void }) {
 
   function submit(event: FormEvent) {
     event.preventDefault()
-    void signIn()
+    void (mode === 'signup' ? createWorkspace() : signIn())
+  }
+  function switchMode(next: 'signin' | 'signup') {
+    setMode(next); setError('')
+    if (next === 'signup') { setEmail(''); setPassword('') }
   }
 
   useEffect(() => {
@@ -176,8 +200,8 @@ function Login({ onLogin }: { onLogin: (email: string) => void }) {
       <div className="login-mobile-brand"><BrandMark /><span>DROPBACK</span></div>
       <div className="login-form-wrap">
         <div className="login-eyebrow">MERCHANT CONSOLE</div>
-        <h2>Welcome back</h2>
-        <p className="muted">Sign in to inspect customer price-match disputes and save return margins.</p>
+        <h2>{mode === 'signup' ? 'Create your DropBack workspace' : 'Welcome back'}</h2>
+        <p className="muted">{mode === 'signup' ? 'Two minutes: create your account, connect PayPal, choose what to protect.' : 'Sign in to inspect customer price-match disputes and save return margins.'}</p>
         {import.meta.env.DEV && <div className="demo-entry demo-entry-mobile">
           <button type="button" className="button button-dark" onClick={startBuyerDemo}>
             <UserRound size={16} /> Start a real Sandbox purchase <ArrowRight size={16} />
@@ -185,11 +209,15 @@ function Login({ onLogin }: { onLogin: (email: string) => void }) {
           <span>PayPal Sandbox checkout and a live Channel3 price check.</span>
         </div>}
         <form className="login-form" onSubmit={submit}>
+          {mode === 'signup' && <label>Store name<div className="input-wrap"><Store size={16} className="field-icon" /><input data-testid="signup-store-name" value={storeName} onChange={e => setStoreName(e.target.value)} required minLength={2} /></div></label>}
           <label>Email address<div className="input-wrap"><span className="field-icon">@</span><input autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} required type="email" /></div></label>
-          <label>Password<div className="input-wrap"><LockKeyhole size={16} className="field-icon" /><input autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required type={show ? 'text' : 'password'} /><button className="reveal-button" type="button" onClick={() => setShow(value => !value)} aria-label={show ? 'Hide password' : 'Show password'}><Eye size={16} /></button></div></label>
+          <label>Password<div className="input-wrap"><LockKeyhole size={16} className="field-icon" /><input autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} minLength={mode === 'signup' ? 10 : 1} value={password} onChange={e => setPassword(e.target.value)} required type={show ? 'text' : 'password'} /><button className="reveal-button" type="button" onClick={() => setShow(value => !value)} aria-label={show ? 'Hide password' : 'Show password'}><Eye size={16} /></button></div></label>
           {error && <div className="form-error">{error}</div>}
-          <button className="button button-dark login-submit" disabled={pending} type="submit">{pending ? <><LoaderCircle size={16} className="spin" /> Signing in…</> : <>Sign in <ArrowRight size={17} /></>}</button>
+          <button className="button button-dark login-submit" disabled={pending} type="submit">{pending ? <><LoaderCircle size={16} className="spin" /> {mode === 'signup' ? 'Creating…' : 'Signing in…'}</> : <>{mode === 'signup' ? 'Create workspace' : 'Sign in'} <ArrowRight size={17} /></>}</button>
         </form>
+        {signupOpen && <div className="signup-switch">{mode === 'signin'
+          ? <>New to DropBack? <button type="button" data-testid="signup-start" onClick={() => switchMode('signup')}>Create a merchant workspace</button></>
+          : <>Already set up? <button type="button" onClick={() => switchMode('signin')}>Sign in</button></>}</div>}
         {import.meta.env.DEV && <div className="demo-login"><Sparkles size={15} /><div><strong>Local merchant preview</strong><span>Run <code>make sandbox-demo</code> for the complete PayPal Sandbox walkthrough.</span></div></div>}
         <div className="login-safe"><ShieldCheck size={15} /> Your merchant workspace is private and protected.</div>
       </div>
@@ -213,6 +241,8 @@ function Shell({ email, onLogout }: { email: string; onLogout: () => void }) {
   const location = useLocation()
   const [open, setOpen] = useState(false)
   const [pendingClaims, setPendingClaims] = useState(0)
+  const [setupDone, setSetupDone] = useState(true)
+  useEffect(() => { getSetup().then(s => setSetupDone(s.completed)).catch(() => undefined) }, [location.pathname])
 
   useEffect(() => {
     api<any[]>('/agent/decisions')
@@ -220,7 +250,7 @@ function Shell({ email, onLogout }: { email: string; onLogout: () => void }) {
       .catch(() => undefined)
   }, [location.pathname])
 
-  const title = nav.find(item => (item.end && location.pathname === '/') || item.to === location.pathname)?.label || 'Settings'
+  const title = location.pathname === '/setup' ? 'Setup' : nav.find(item => (item.end && location.pathname === '/') || item.to === location.pathname)?.label || 'Settings'
 
   return <div className="app-shell">
     <aside className={`sidebar ${open ? 'sidebar-open' : ''}`}>
@@ -236,6 +266,7 @@ function Shell({ email, onLogout }: { email: string; onLogout: () => void }) {
         ))}
       </nav>
       <div className="side-caption side-caption-lower">MANAGE</div>
+      <NavLink to="/setup" onClick={() => setOpen(false)} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Rocket size={18} strokeWidth={1.8} /><span>Setup</span>{!setupDone && <i className="nav-badge">!</i>}</NavLink>
       <NavLink to="/settings" onClick={() => setOpen(false)} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><Settings2 size={18} strokeWidth={1.8} /><span>Settings</span></NavLink>
       <div className="sidebar-spacer" />
       <Link to="/portal" target="_blank" className="store-shortcut" style={{ marginBottom: 6 }}>
@@ -252,7 +283,7 @@ function Shell({ email, onLogout }: { email: string; onLogout: () => void }) {
     </aside>
     <main className="main-shell">
       <header className="topbar"><button className="mobile-menu" onClick={() => setOpen(value => !value)} aria-label="Toggle menu">☰</button><div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-slash">/</span><b>{title}</b></div><div className="topbar-actions"><div className="sandbox-pill"><span /> SANDBOX</div><button className="icon-button help-button" title="Help"><CircleHelp size={18} /></button><div className="topbar-avatar">{email.slice(0, 1).toUpperCase()}</div></div></header>
-      <div className="page-wrap"><Outlet /></div>
+      <div className="page-wrap">{!setupDone && location.pathname !== '/setup' && <div className="setup-banner" data-testid="setup-banner"><Rocket size={17} /><span><b>Finish setting up DropBack.</b> Connect your PayPal account and choose the products to protect.</span><Link to="/setup" className="button button-dark small-button">Continue setup <ArrowRight size={14} /></Link></div>}<Outlet /></div>
     </main>
   </div>
 }
@@ -395,10 +426,10 @@ function ProductsPage({ toast }: { toast: (value: Toast) => void }) {
     <PageHeading eyebrow="CATALOG & PRICE MONITORING" title="Products" description="Connect each product to Channel3 and monitor competitor market prices across retailers." right={<button className="button button-dark" onClick={() => setAdding(true)}><Plus size={16} /> Add product</button>} />
     <div className="product-info"><div className="product-info-icon"><Activity size={18} /></div><div><b>Channel3 monitors competitor market prices</b><span>Channel3 tracks real-time competitor prices and in-stock offers across online retailers to catch price drops early.</span></div><span className="source-chip"><span /> CHANNEL3 API</span></div>
     {adding && <form className="add-product-form" onSubmit={addProduct}>
-      <div className="form-heading"><div><b>Add from the live Channel3 catalog</b><span>Search Channel3, choose the exact listing, then set Holloway’s selling price.</span></div><button type="button" className="icon-button" onClick={() => setAdding(false)} aria-label="Close"><X size={18} /></button></div>
+      <div className="form-heading"><div><b>Add from the live Channel3 catalog</b><span>Search Channel3, choose the exact listing, then set your selling price.</span></div><button type="button" className="icon-button" onClick={() => setAdding(false)} aria-label="Close"><X size={18} /></button></div>
       <div className="channel3-catalog-search"><label>Search Channel3 listings<input data-testid="channel3-catalog-search" value={channel3Query} onChange={e => setChannel3Query(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void searchChannel3() } }} placeholder="Sony WH-1000XM5, Kindle Paperwhite…" /></label><button type="button" className="button button-light small-button" onClick={() => void searchChannel3()} disabled={searchingChannel3}>{searchingChannel3 ? <LoaderCircle className="spin" size={14} /> : <Search size={14} />} Search Channel3</button></div>
       {channel3Results.length > 0 && <div className="channel3-catalog-results">{channel3Results.map((item, index) => <div className="channel3-catalog-result" key={item.id || `${item.title}-${index}`}>{item.image_url && <img src={item.image_url} alt="" loading="lazy" />}<div><b>{item.title}</b><span>{item.best_offer?.merchant || 'Retailer'} · {money(item.best_offer?.price || 0)} · {item.all_offers?.length || 0} current offers</span></div><button type="button" className="button button-light small-button" onClick={() => setForm({ name: item.title, sku: `C3-${String(item.id || index).replace(/[^a-z0-9]/gi, '').toUpperCase()}`, category: item.category || 'Electronics', current_price: '', description: item.description || '', channel3_product_id: String(item.id || '') })}>Select listing</button></div>)}</div>}
-      <div className="form-grid"><label>Product name<input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label><label>SKU<input required value={form.sku} onChange={e => setForm({ ...form, sku: e.target.value })} /></label><label>Category<input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} /></label><label>Holloway selling price<input required type="number" min="0.01" step="0.01" value={form.current_price} onChange={e => setForm({ ...form, current_price: e.target.value })} /></label></div>
+      <div className="form-grid"><label>Product name<input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label><label>SKU<input required value={form.sku} onChange={e => setForm({ ...form, sku: e.target.value })} /></label><label>Category<input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} /></label><label>Your selling price<input required type="number" min="0.01" step="0.01" value={form.current_price} onChange={e => setForm({ ...form, current_price: e.target.value })} /></label></div>
       <label className="full-field">Short description<input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></label><button className="button button-dark" type="submit" disabled={!form.channel3_product_id}>Add verified Channel3 listing <ArrowRight size={16} /></button>
     </form>}
     <div className="product-list">{products.map((product, i) => <article className="product-row" key={product.id}>
@@ -458,7 +489,8 @@ function SettingsPage({ toast }: { toast: (value: Toast) => void }) {
     event.preventDefault(); setSaving(true)
     try {
       const payload = { ...values }
-      delete payload.channel3_configured; delete payload.paypal_environment; delete payload.auto_refund_enabled
+      delete payload.channel3_configured; delete payload.paypal_environment; delete payload.auto_refund_enabled; delete payload.llm_configured
+      if (Array.isArray(payload.allowed_retailers)) payload.allowed_retailers = payload.allowed_retailers.join(', ')
       await api('/settings', { method: 'PATCH', body: JSON.stringify(payload) })
       toast({ kind: 'success', message: 'Merchant settings saved.' })
     } catch (error) { toast({ kind: 'error', message: error instanceof Error ? error.message : 'Settings were not saved.' }) }
@@ -467,7 +499,8 @@ function SettingsPage({ toast }: { toast: (value: Toast) => void }) {
   return <><PageHeading eyebrow="PREFERENCES & CONNECTIONS" title="Settings" description="Set your protection policy and see which services are connected." />
     <div className="settings-layout"><div className="settings-main"><form onSubmit={save}>
       <section className="settings-card"><div className="settings-card-head"><div className="settings-icon"><Settings2 size={18} /></div><div><h2>Protection policy</h2><p>Set the guardrails the agent uses for every recommendation.</p></div></div><div className="settings-fields"><label>Merchant display name<input value={values.merchant_name || ''} onChange={e => field('merchant_name', e.target.value)} /></label><label>Price protection window <span className="input-suffix"><input type="number" min="1" max="90" value={values.price_protection_window_days || 14} onChange={e => field('price_protection_window_days', Number(e.target.value))} /><i>days</i></span></label><label>Maximum refund per order <span className="input-prefix"><i>$</i><input type="number" min="1" step="0.01" value={values.max_refund_per_order || 100} onChange={e => field('max_refund_per_order', Number(e.target.value))} /></span></label><label>Daily refund budget <span className="input-prefix"><i>$</i><input type="number" min="1" step="0.01" value={values.daily_refund_budget || 500} onChange={e => field('daily_refund_budget', Number(e.target.value))} /></span></label><label>Minimum price drop <span className="input-prefix"><i>$</i><input type="number" min="0" step="0.01" value={values.min_price_drop_amount || 5} onChange={e => field('min_price_drop_amount', Number(e.target.value))} /></span></label><label>Minimum percentage drop <span className="input-suffix"><input type="number" min="0" max="100" step="0.1" value={values.min_price_drop_percentage || 5} onChange={e => field('min_price_drop_percentage', Number(e.target.value))} /><i>%</i></span></label></div></section>
-      <section className="settings-card"><div className="settings-card-head"><div className="settings-icon pale-orange"><RotateCcw size={18} /></div><div><h2>Return cost estimate</h2><p>Used to compare an early refund with a physical box return.</p></div></div><div className="settings-fields"><label>Shipping per leg <span className="input-prefix"><i>$</i><input type="number" min="0" step="0.01" value={values.return_shipping_cost || 12} onChange={e => field('return_shipping_cost', Number(e.target.value))} /></span></label><label>Restocking loss <span className="input-suffix"><input type="number" min="0" max="100" step="0.1" value={values.restocking_fee_percentage || 15} onChange={e => field('restocking_fee_percentage', Number(e.target.value))} /><i>%</i></span></label><label>Open-box discount <span className="input-suffix"><input type="number" min="0" max="100" step="0.1" value={values.open_box_discount_percentage || 25} onChange={e => field('open_box_discount_percentage', Number(e.target.value))} /><i>%</i></span></label></div></section>
+      <section className="settings-card"><div className="settings-card-head"><div className="settings-icon pale-orange"><RotateCcw size={18} /></div><div><h2>Return cost estimate</h2><p>Used to compare an early refund with a physical box return.</p></div></div><div className="settings-fields"><label>Shipping per leg <span className="input-prefix"><i>$</i><input type="number" min="0" step="0.01" value={values.return_shipping_cost || 12} onChange={e => field('return_shipping_cost', Number(e.target.value))} /></span></label><label>Restocking loss <span className="input-suffix"><input type="number" min="0" max="100" step="0.1" value={values.restocking_fee_percentage || 15} onChange={e => field('restocking_fee_percentage', Number(e.target.value))} /><i>%</i></span></label><label>Open-box discount <span className="input-suffix"><input type="number" min="0" max="100" step="0.1" value={values.open_box_discount_percentage || 25} onChange={e => field('open_box_discount_percentage', Number(e.target.value))} /><i>%</i></span></label><label>Gross margin (lost if the buyer rebuys elsewhere) <span className="input-suffix"><input type="number" min="0" max="100" step="0.5" value={values.gross_margin_percentage ?? 30} onChange={e => field('gross_margin_percentage', Number(e.target.value))} /><i>%</i></span></label></div></section>
+      <section className="settings-card"><div className="settings-card-head"><div className="settings-icon pale-purple"><ShieldCheck size={18} /></div><div><h2>Price-match rules</h2><p>Which offers count as evidence for a claim.</p></div></div><div className="settings-fields"><label className="full-field">Retailers you price-match<input placeholder="bestbuy.com, target.com (empty = any in-stock new offer)" value={Array.isArray(values.allowed_retailers) ? values.allowed_retailers.join(', ') : values.allowed_retailers || ''} onChange={e => field('allowed_retailers', e.target.value)} /></label></div></section>
       <div className="settings-save"><span><LockKeyhole size={14} /> Every refund still needs your approval.</span><button className="button button-dark" disabled={saving || loading}>{saving ? <LoaderCircle className="spin" size={16} /> : <Check size={16} />}{saving ? 'Saving…' : 'Save settings'}</button></div>
     </form></div><aside className="settings-side"><div className="settings-card connection-card"><div className="settings-card-head"><div className="settings-icon pale-green"><Activity size={18} /></div><div><h2>Connections</h2><p>Server-side service health</p></div></div><ServiceStatus name="Channel3" detail="Required live product matching & price monitoring" connected={!!health?.channel3_configured} critical /><ServiceStatus name="PayPal" detail={`${health?.paypal_environment || 'Sandbox'} checkout, capture & refunds`} connected={!!health?.paypal_configured} /><div className="setup-note"><b>{health?.channel3_configured ? 'Channel3 API connected' : 'Channel3 is required'}</b><p>{health?.channel3_configured ? health.channel3_webhook_configured ? 'Live price checks and signed webhook verification are configured.' : <>Live price checks and product subscriptions are active. To receive ongoing price-change events, set <code>CHANNEL3_WEBHOOK_SECRET</code> and register the public HTTPS endpoint shown in the README.</> : <>Live price checks require <code>CHANNEL3_API_KEY</code> on the backend. Configure it and restart the API.</>}</p></div><div className="setup-note setup-note-blue"><b>PayPal checkout testing</b><p>Sign in to the checkout popup with a Personal sandbox account from PayPal Developer Dashboard → Sandbox → Accounts.</p></div></div><div className="settings-card scoring-card"><div className="settings-card-head"><div className="settings-icon pale-purple"><Sparkles size={18} /></div><div><h2>Agent scoring</h2><p>Decision support, not autonomous payment.</p></div></div><div className="scoring-row"><span>Model assisted</span><b>OpenAI gpt-4.1-mini / Gemini</b></div><div className="scoring-row"><span>Policy authority</span><b>Deterministic rules</b></div><div className="scoring-row"><span>Auto-refunds</span><b className="disabled-label">Disabled</b></div></div></aside></div>
   </>
