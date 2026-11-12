@@ -160,7 +160,7 @@ export default function APIMaticPage({ toast }: { toast?: (t: { message: string;
           <div className="api-contract-list">
             <div className="api-contract-row">
               <span className={`api-method ${status?.mcp.enabled ? 'method-get' : 'method-delete'}`}>{status?.mcp.enabled ? 'ON' : 'OFF'}</span>
-              <div><b style={{ textTransform: 'none' }}>DropBack MCP server</b><code>{window.location.protocol}//{window.location.hostname}:8000{status?.mcp.path || '/mcp/'}</code></div>
+              <div><b style={{ textTransform: 'none' }}>DropBack MCP server</b><code>{window.location.port === '5173' ? `${window.location.protocol}//${window.location.hostname}:8000` : window.location.origin}{status?.mcp.path || '/mcp/'}</code></div>
             </div>
           </div>
           <p className="api-panel-copy" style={{ overflowWrap: 'anywhere' }}>

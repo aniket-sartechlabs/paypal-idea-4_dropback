@@ -507,3 +507,13 @@
 .c3-compact .c3-chart svg{height:64px}
 @media (max-width:600px){.c3-stats{grid-template-columns:repeat(2,1fr)}}
 .c3-count{font-size:11px;color:#1f4f86;font-weight:600}
+
+/* Channel3 catalog search / lookup results */
+.channel3-catalog-search{display:flex;align-items:flex-end;gap:10px;margin:10px 0}
+.channel3-catalog-search label{flex:1;display:flex;flex-direction:column;gap:6px;font-size:12px;color:#4a5652}
+.channel3-catalog-results{display:flex;flex-direction:column;gap:8px;margin:8px 0 14px}
+.channel3-catalog-result{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid #e9ece8;border-radius:9px;background:#fff}
+.channel3-catalog-result img{width:56px;height:56px;object-fit:contain;border-radius:6px;background:#f7f8f6;flex:none}
+.channel3-catalog-result>div{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.channel3-catalog-result b{font-size:13px;color:#1e293b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.channel3-catalog-result span{font-size:12px;color:#64748b}
