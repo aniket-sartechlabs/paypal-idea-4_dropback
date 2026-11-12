@@ -33,6 +33,14 @@ def _offer_price(offer: dict) -> float | None:
     return None
 
 
+def _image(product: dict) -> str | None:
+    """Channel3 v1 returns `images` (a list of {url, ...} or strings); older payloads used image_url."""
+    images = product.get("images") or []
+    first = images[0] if images else None
+    url = (first.get("url") if isinstance(first, dict) else first) or product.get("image_url") or product.get("image")
+    return url if isinstance(url, str) and url.startswith("https://") else None
+
+
 def _title(product: dict) -> str:
     return str(product.get("title") or product.get("name") or "").strip()
 
@@ -166,7 +174,7 @@ class Channel3Client:
                 "title": _title(p),
                 "description": p.get("description", ""),
                 "category": p.get("category", "General"),
-                "image_url": p.get("image_url") or p.get("image"),
+                "image_url": _image(p),
                 "best_offer": best,
                 "all_offers": valid_offers,
             })
@@ -246,7 +254,7 @@ class Channel3Client:
             "matched": True,
             "product_id": str(matched_id) if matched_id else None,
             "title": title,
-            "image_url": matched.get("image_url") or matched.get("image"),
+            "image_url": _image(matched),
             "match_confidence": round(match_score, 3),
             "offer_count": len(new_offers),
             "best_offer": best,
@@ -329,7 +337,7 @@ class Channel3Client:
                 })
         if not valid:
             raise Channel3Error("Channel3 matched the product but returned no live offers.", 404)
-        return {"id": product.get("id"), "title": _title(product), "image_url": product.get("image_url") or product.get("image"), "best_offer": min(valid, key=lambda item: item["price"]), "offer_count": len(valid)}
+        return {"id": product.get("id"), "title": _title(product), "image_url": _image(product), "best_offer": min(valid, key=lambda item: item["price"]), "offer_count": len(valid)}
 
     # -- market evidence: price history (Price Tracking API) and retailer details (Websites API) ------------
     def _headers(self) -> dict:
@@ -400,9 +408,7 @@ class Channel3Client:
             amount = _offer_price(offer) if isinstance(offer, dict) else None
             if amount and _in_stock(offer.get("availability")) and _is_new(offer.get("condition")):
                 offers.append({"price": round(amount, 2), "merchant": str(offer.get("domain") or "Retailer")[:100], "url": offer.get("url")})
-        images = product.get("images") or []
-        first_image = images[0] if images else None
-        image_url = first_image.get("url") if isinstance(first_image, dict) else first_image
+        image_url = _image(product)
         brands = product.get("brands") or []
         brand = brands[0].get("name") if brands and isinstance(brands[0], dict) else (brands[0] if brands else None)
         category = product.get("category") or {}

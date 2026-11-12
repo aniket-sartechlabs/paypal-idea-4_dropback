@@ -56,6 +56,44 @@ def merge_split_words(words: list[dict]) -> list[dict]:
     return out
 
 
+FRAME = 0.01  # seconds per loudness frame
+
+
+def loudness(path: Path):
+    """Per-10ms loudness (dBFS) of a 16-bit mono wav."""
+    import numpy as np
+    with wave.open(str(path)) as w:
+        rate = w.getframerate()
+        x = np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(np.float32) / 32768
+    n = int(rate * FRAME)
+    x = x[: len(x) // n * n].reshape(-1, n)
+    return 20 * np.log10(np.sqrt((x ** 2).mean(axis=1)) + 1e-6)
+
+
+def quietest(level, lo: float, hi: float) -> float:
+    """Middle of the longest near-silent run in [lo, hi]; else the quietest 10ms."""
+    import numpy as np
+    i0, i1 = max(0, int(lo / FRAME)), min(len(level), int(hi / FRAME))
+    seg = level[i0:i1]
+    if len(seg) == 0:
+        return max(0.0, (lo + hi) / 2)
+    floor = float(np.percentile(level, 5))
+    quiet = seg < max(floor + 12, -45)
+    best, run, start = (0, 0), 0, 0
+    for k, q in enumerate(quiet):
+        if q:
+            if run == 0:
+                start = k
+            run += 1
+            if run > best[0]:
+                best = (run, start)
+        else:
+            run = 0
+    if best[0] >= 8:  # at least 80 ms of quiet
+        return (i0 + best[1] + best[0] / 2) * FRAME
+    return (i0 + int(np.argmin(seg))) * FRAME
+
+
 def main() -> None:
     load_dotenv(ROOT / ".env")
     ap = argparse.ArgumentParser()
@@ -105,13 +143,17 @@ def main() -> None:
     if missing:
         raise SystemExit(f"no words matched for {missing}; check the take")
 
-    # Cut halfway through the pause between one scene's last word and the next scene's first word.
+    # Cut in the real pause between lines. Whisper's word times are coarse (adjacent words often
+    # share a timestamp), so a cut placed from timestamps alone can split the next line's first
+    # word: one clip ends on a fragment and the next repeats the word. Find the quietest stretch
+    # of audio near the boundary and cut in its middle.
+    level = loudness(full)
     cuts = [0.0]
     for i in range(len(scenes) - 1):
         a, b = last[i], first[i + 1]
-        if b <= a:
-            print(f"  ! {scenes[i + 1]['id']} overlaps the scene before it ({a:.2f} > {b:.2f})")
-        cuts.append((a + b) / 2)
+        cut = quietest(level, min(a, b) - 0.6, b + 0.12)  # never past the next line's first word
+        print(f"  cut {scenes[i]['id']}|{scenes[i + 1]['id']} at {cut:.2f}s (words end {a:.2f}, next start {b:.2f})")
+        cuts.append(cut)
     cuts.append(total)
 
     trim = "silenceremove=start_periods=1:start_threshold=-45dB,areverse,silenceremove=start_periods=1:start_threshold=-45dB,areverse"
@@ -130,6 +172,10 @@ def main() -> None:
         flag = "" if len(words) >= 0.8 * expected else "  ! words missing"
         print(f"  {sc['id']}  {d:5.2f}s  {len(words)}/{expected} words{flag}")
         (AUDIO / f"{sc['id']}.json").write_text(json.dumps({"key": "take", "duration": d, "words": words}, indent=1))
+        said = [norm(w["w"]) for w in words if norm(w["w"])]
+        script_words = [norm(w) for w in sc["vo"].split() if norm(w)]
+        if said and script_words and (said[0] != script_words[0] or said[-1] != script_words[-1]):
+            print(f"    ? {sc['id']} starts '{said[0]}' (script '{script_words[0]}'), ends '{said[-1]}' (script '{script_words[-1]}')")
     print("scene clips in", AUDIO)
 
 
