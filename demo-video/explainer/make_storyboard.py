@@ -102,7 +102,7 @@ def main() -> None:
             for b in v.get("boxes", []):
                 r = rects.get(b.pop("rect"))
                 if r:
-                    boxes.append({**b, **{k: r[k] for k in ("x", "y", "w", "h")}})
+                    boxes.append({**b, **{k: r[k] for k in ("x", "y", "w", "h")}, "src_at": r.get("at")})
             v["boxes"] = boxes
         sc["vo"] = spoken(sc["say"])
         scenes.append(sc)

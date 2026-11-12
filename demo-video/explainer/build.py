@@ -35,7 +35,8 @@ OUT = ROOT / "video-out"
 BUILD = OUT / "build"
 FPS = 30
 LEAD = 0.12   # silence before each line
-GAP = 0.30    # silence after each line
+GAP = 0.45    # silence after each line
+MAX_SPEED = 1.8  # recordings never play faster than this; a scene lasts as long as its footage needs
 TEMPO = 1.07  # slightly brisker delivery (pitch preserved)
 FF = imageio_ffmpeg.get_ffmpeg_exe()
 PREVIEW_AT: list[float] = []  # --at: scene seconds for previews (default: three points per scene)
@@ -119,6 +120,9 @@ def timeline(sb: dict) -> list[dict]:
     for sc in sb["scenes"]:
         meta = json.loads((BUILD / "audio" / f"{sc['id']}.json").read_text())
         dur = LEAD + meta["duration"] + GAP + float(sc.get("hold", 0))
+        v = sc.get("visual", {})
+        if v.get("type") == "rec" and "from" in v and "to" in v:
+            dur = max(dur, (v["to"] - v["from"]) / MAX_SPEED)
         words = [{"w": w["w"], "start": round(w["start"] + LEAD, 3)} for w in meta["words"]]
         out.append({"id": sc["id"], "start": t, "dur": dur, "frames": round(dur * FPS), "words": words, "audio": meta["duration"]})
         t += dur
@@ -183,6 +187,11 @@ def track_boxes(sb: dict, tl: list[dict]) -> None:
                 b["_track"] = []
                 continue
             at = max(0.0, at + float(b.get("off", 0)))
+            if b.get("src_at") is not None:
+                # The box was measured at this moment of the recording; never show it before the footage gets there.
+                # ...and never long after it either: by then the page may have moved on.
+                seen = (float(b["src_at"]) - v["from"]) / v["speed"] + 0.15
+                at = min(max(at, seen), seen + 1.2)
             f0 = min(len(F) - 1, int(round(at * FPS)))
             x0, x1 = int(b["x"] * GW), int((b["x"] + b["w"]) * GW)
             y0, y1 = int(b["y"] * GH), int((b["y"] + b["h"]) * GH)
@@ -225,6 +234,18 @@ def _frame_filter(v: dict) -> str:
 
 
 # --- render ------------------------------------------------------------------------------
+
+def _shot(page, **kw) -> bytes:
+    """Chromium occasionally fails one capture; retry instead of losing a long render."""
+    for attempt in range(4):
+        try:
+            return page.screenshot(**kw)
+        except Exception:
+            if attempt == 3:
+                raise
+            time.sleep(0.5)
+    raise RuntimeError("unreachable")
+
 
 def render(sb: dict, tl: list[dict], only: list[str] | None) -> Path:
     from playwright.sync_api import sync_playwright
@@ -294,7 +315,7 @@ def render(sb: dict, tl: list[dict], only: list[str] | None) -> Path:
         for i, (sc, info) in enumerate(zip(data["scenes"], tl)):
             for f in range(info["frames"]):
                 page.evaluate("([i, t, src]) => window.__render(i, t, src)", [i, f / FPS, frame_src(sc, f)])
-                enc.stdin.write(page.screenshot(type="jpeg", quality=92))
+                enc.stdin.write(_shot(page, type="jpeg", quality=92))
                 done += 1
             el = time.time() - t0
             print(f"  rendered {sc['id']}  {done}/{total} frames  {el:.0f}s", flush=True)

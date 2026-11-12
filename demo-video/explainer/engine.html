@@ -481,9 +481,10 @@ V.offers = (v, s, cue, A) => {
 V.flow = (v, s, cue, A) => {
   const el = h('<div class="flow"></div>');
   v.nodes.forEach((x, i) => {
-    if (i) { const cn = h('<div class="conn"></div>'); el.append(cn); anim(A, cn, cue(x.cue, 0.4 + i * 0.6) - 0.2, 'growx', 0.3); }
+    const t = cue(x.cue, 0.4 + i * 0.6);  // look the cue up once: each lookup consumes the word
+    if (i) { const cn = h('<div class="conn"></div>'); el.append(cn); anim(A, cn, t - 0.2, 'growx', 0.3); }
     const c = h(`<div class="card node it"><div class="k">${esc(x.k)}</div><b>${esc(x.text)}</b><span>${esc(x.sub || '')}</span></div>`);
-    el.append(c); anim(A, c, cue(x.cue, 0.4 + i * 0.6), 'pop', 0.45);
+    el.append(c); anim(A, c, t, 'pop', 0.45);
   });
   return el;
 };
