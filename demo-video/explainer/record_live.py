@@ -235,6 +235,11 @@ async def record(settings: Settings, signal: dict[str, Any], headless: bool, pay
             price = await (await price_info.value).json()
             if not price.get("price_drop_detected"):
                 raise RuntimeError("Channel3 did not find a lower in-stock offer; no claim was submitted.")
+            market = price.get("market") or {}
+            stats = (market.get("history") or {}).get("statistics") or {}
+            facts.update(retailer_name=(market.get("retailer") or {}).get("name"), offers_checked=market.get("offers_checked"),
+                         c3_days=len((market.get("history") or {}).get("points") or []) or None,
+                         c3_low=stats.get("min_price"), c3_high=stats.get("max_price"), c3_status=stats.get("current_status"))
             facts.update(offer=price.get("competitor_price"), retailer=price.get("competitor_name"), diff=price.get("drop_amount"),
                          diff_pct=price.get("drop_percentage"), offer_url=(price.get("best_offer") or {}).get("url"),
                          window_days=price.get("protection_window_days"))
@@ -244,6 +249,10 @@ async def record(settings: Settings, signal: dict[str, Any], headless: bool, pay
             await r.rect("offer_card", ".claim-submission-card")
             await r.rect("offer_badge", ".price-drop-delta-badge")
             await r.pause(3800)
+            await r.glide('[data-testid="channel3-evidence"]', "center", 1200)
+            r.mark("c3_evidence")
+            await r.rect("c3_panel", '[data-testid="channel3-evidence"]')
+            await r.pause(5200)
             await r.glide('[data-testid="submit-claim-btn"]', "center", 900)
             r.mark("claim_ready")
             await r.rect("submit_claim", '[data-testid="submit-claim-btn"]')
@@ -277,6 +286,8 @@ async def record(settings: Settings, signal: dict[str, Any], headless: bool, pay
             await page.locator('[data-testid="key-drivers"]').wait_for(state="visible", timeout=10000)
             r.mark("report")
             await r.pause(900)
+            await r.rect("report_c3", '[data-testid="claim-modal"] [data-testid="channel3-evidence"]')
+            await r.pause(2600)
             await r.rect("report_metrics", '[data-testid="claim-modal"] .modal-metrics-grid')
             await r.pause(3600)
             await r.glide('[data-testid="claim-modal"] .financial-comparison-grid', "center", 1300)

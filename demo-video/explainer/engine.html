@@ -280,6 +280,14 @@ html,body{width:1920px;height:1080px;overflow:hidden;background:#000}
 .title h2 em{font-style:normal;color:#3DDC84}.title h2 i{font-style:normal;color:#FF5D5D}
 .title p{font:600 30px 'JetBrains Mono',monospace;color:var(--muted);margin-top:30px;letter-spacing:.03em}
 .title .pills{display:flex;gap:18px;justify-content:center;margin-top:34px}
+.powered{display:inline-flex;align-items:center;gap:22px;margin-top:38px;padding:16px 30px;border-radius:20px;background:rgba(255,255,255,.06);border:1px solid rgba(141,217,173,.38)}
+.powered small{font:800 20px 'JetBrains Mono',monospace;letter-spacing:.14em;color:var(--accent)}
+.powered em{font:400 34px Inter;font-style:normal;opacity:.55}
+.powered .pw{display:inline-flex;align-items:center;gap:12px}
+.powered .pw b{font:800 38px Inter;letter-spacing:-.01em}
+.powered .pw i{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font:900 26px Inter;font-style:normal;color:#fff}
+.powered .pw-paypal{background:#0070E0}.powered .pw-channel3{background:#1f4f86}
+.end .powered{margin-top:30px}
 .title .pills span{font:700 28px Inter;padding:12px 26px;border-radius:999px;background:var(--card);border:1px solid var(--line)}
 .end .llock{font-size:104px;margin-bottom:18px}
 /* highlight box on recordings: spotlight on the part being explained */
@@ -716,8 +724,9 @@ V.story = (v, s, cue, A) => {
 };
 
 V.title = (v, s, cue, A) => {
-  const el = h(`<div class="title"><span class="llock it"><span class="lmark"></span><b>${esc((SB && SB.brand) || 'DropBack')}</b></span><h2 class="it">${v.tagline}</h2><p class="it">${esc(v.sub)}</p><div class="pills it">${(v.pills || []).map((p) => `<span>${esc(p)}</span>`).join('')}</div></div>`);
+  const el = h(`<div class="title"><span class="llock it"><span class="lmark"></span><b>${esc((SB && SB.brand) || 'DropBack')}</b></span><h2 class="it">${v.tagline}</h2><p class="it">${esc(v.sub)}</p>${v.powered ? `<div class="powered it"><small>POWERED BY</small>${v.powered.map((name) => `<span class="pw"><i class="pw-${esc(name.toLowerCase())}">${esc(name.slice(0, 1))}</i><b>${esc(name)}</b></span>`).join('<em>×</em>')}</div>` : ''}<div class="pills it">${(v.pills || []).map((p) => `<span>${esc(p)}</span>`).join('')}</div></div>`);
   anim(A, el.querySelector('.llock'), 0.1, 'pop', 0.7, { sfx: 'impact' });
+  if (v.powered) anim(A, el.querySelector('.powered'), cue(v.poweredCue, 1.2), 'pop', 0.5, { sfx: 'impact' });
   anim(A, el.querySelector('h2'), cue(v.cue, 0.9), 'rise', 0.5);
   anim(A, el.querySelector('p'), cue(v.subCue, 1.5), 'rise', 0.5);
   anim(A, el.querySelector('.pills'), cue(v.pillsCue, 1.9), 'rise', 0.5);
@@ -725,8 +734,8 @@ V.title = (v, s, cue, A) => {
 };
 
 V.end = (v, s, cue, A) => {
-  const el = h(`<div class="end"><div class="orb it" style="display:none"></div><span class="llock it"><span class="lmark"></span><b>${esc((SB && SB.brand) || 'DropBack')}</b></span><h2 class="it">${rich(v.title)}</h2><p class="it">${rich(v.sub)}</p><div class="pills it">${v.pills.map((p) => `<span>${esc(p)}</span>`).join('')}</div><div class="repo it">${esc(v.repo)}</div></div>`);
-  ['.llock', 'h2', 'p', '.pills', '.repo'].forEach((q, i) => anim(A, el.querySelector(q), 0.1 + i * 0.35, i ? 'rise' : 'pop', 0.5));
+  const el = h(`<div class="end"><div class="orb it" style="display:none"></div><span class="llock it"><span class="lmark"></span><b>${esc((SB && SB.brand) || 'DropBack')}</b></span><h2 class="it">${rich(v.title)}</h2><p class="it">${rich(v.sub)}</p>${v.powered ? `<div class="powered it"><small>POWERED BY</small>${v.powered.map((name) => `<span class="pw"><i class="pw-${esc(name.toLowerCase())}">${esc(name.slice(0, 1))}</i><b>${esc(name)}</b></span>`).join('<em>×</em>')}</div>` : ''}<div class="pills it">${v.pills.map((p) => `<span>${esc(p)}</span>`).join('')}</div><div class="repo it">${esc(v.repo)}</div></div>`);
+  ['.llock', 'h2', 'p', '.powered', '.pills', '.repo'].filter((q) => el.querySelector(q)).forEach((q, i) => anim(A, el.querySelector(q), 0.1 + i * 0.35, i ? 'rise' : 'pop', 0.5));
   return el;
 };
 

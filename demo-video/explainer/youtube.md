@@ -1,5 +1,5 @@
 TITLE
-DropBack: refund the price drop, keep the sale | PayPal AI Hackathon 2026
+DropBack: refund the price drop, keep the sale | PayPal × Channel3 | PayPal AI Hackathon 2026
 
 DESCRIPTION
 When a product gets cheaper right after someone buys it, shoppers often send it back and buy it again elsewhere. The merchant pays for the return and loses the sale anyway.
@@ -9,7 +9,7 @@ DropBack is 14-day price protection for PayPal merchants. A merchant signs up, c
 Everything in the demo is real, in PayPal Sandbox:
 - Merchant onboarding: sign-up, connect PayPal (credentials verified, secret encrypted), orders imported from the merchant's own checkout
 - Checkout, capture and refund run through the APIMatic-generated PayPal Server SDK (Orders v2, Payments v2), with idempotency keys on every refund
-- Live Channel3 offers for the exact product
+- Channel3 as the evidence layer: live new, in-stock offers for the exact model (filtered to the merchant's approved retailers), retailer details, and 90-day price history, plus product lookup by URL, subscriptions and price tracking
 - AI return-risk scoring with hard policy limits that never depend on the model
 - AG Grid claims queue for the merchant
 - A read-only MCP server so AI agents can inspect claims

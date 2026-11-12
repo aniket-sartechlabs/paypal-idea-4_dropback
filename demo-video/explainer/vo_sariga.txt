@@ -1,23 +1,24 @@
-[confident] This is DropBack. … When the price drops, your customer KEEPS the item… and you keep the sale.
+[confident] This is DropBack, powered by PayPal and Channel3. … When the price drops, your customer KEEPS the item… and you keep the sale.
 [serious] Last year, American shoppers sent back $890 billion of merchandise. … Almost seventeen percent of everything they bought.
-And some returns have NOTHING to do with the product. A shopper pays $398. Days later, it's $319.99 somewhere else. … So they send it back, and buy it again… cheaper.
-[thoughtful] For the merchant, that return costs FAR more than the difference. Return shipping, restocking, an open-box markdown, and the profit on a sale that's gone… about $291… to avoid a $78.01 gap.
+And some returns have NOTHING to do with the product. A shopper pays $398. Days later, it's $298 somewhere else. … So they send it back, and buy it again… cheaper.
+[thoughtful] For the merchant, that return costs FAR more than the difference. Return shipping, restocking, an open-box markdown, and the profit on a sale that's gone… about $291… to avoid a $100 gap.
 Some stores offer price matching. But checking rival prices by hand is slow… and most shoppers never even know the policy exists.
-[warmly] DropBack is fourteen-day price protection for PayPal merchants. It plugs into the checkout they already have. Channel3 checks the live price. AI weighs a refund against a likely return. And the merchant sends a PayPal refund… in ONE click.
+[warmly] DropBack plugs into the checkout a merchant already has. Channel3 watches the exact product across retailers, with its price history. AI weighs a refund against a likely return. And the merchant sends a PayPal refund… in ONE click.
 [upbeat] Here it is, live in PayPal Sandbox. A merchant joins in a couple of minutes. They create a workspace for their store…
 …and connect their own PayPal account. DropBack checks the keys with PayPal and encrypts the secret. From then on, paid orders from their checkout flow in by webhook.
-They pick the retailers they'll price-match, keep the refund limits… and turn protection on.
+They pick the retailers they'll price-match… Channel3 links their products for live monitoring… and they turn protection on.
 Now a shopper picks Sony headphones in the Holloway store… $398, covered for 14 days.
 They check out with PayPal. DropBack creates the order through PayPal's Server SDK.
 The buyer signs in to PayPal, and approves. The payment is captured.
 Day three. The buyer opens their order… and checks the live market price.
-Channel3 finds the EXACT same model, in stock, at beachcamera.com… for $319.99. That's $78.01 less.
+Channel3 checks new, in-stock offers for the EXACT same model, only from retailers this store price-matches. The lowest: $298 at Beach Camera. That's $100 less.
+And it's verified by Channel3: the retailer, and 46 days of price history for this exact product. It held steady at $319.99… so the merchant can see today's $298 is a real drop, not a guess.
 Instead of sending it back… they ask for the difference.
 On the merchant side, every request lands in AG Grid: the buyer, the live offer, and the refund… versus the cost of a return.
-The AI case report puts the return risk at 52 percent. Counting the lost sale, a return would cost about $291… so refunding $78.01 saves about $72 on average. [firm] Policy limits are NEVER left to the model.
-The merchant approves. PayPal refunds $78.01 to the original payment… with an idempotency key, so it can NEVER pay twice.
+The merchant's case report opens on the same Channel3 evidence. The AI puts the return risk at 57 percent. Counting the lost sale, a return would cost about $291… so refunding $100 saves about $65 on average. [firm] Policy limits are NEVER left to the model.
+The merchant approves. PayPal refunds $100 to the original payment… with an idempotency key, so it can NEVER pay twice.
 [warmly] The buyer sees it right away. Refund credited. They keep their headphones… and the merchant keeps the sale.
 The overview tracks every refund… and the returns it avoided.
-Every PayPal call runs through the APIMatic-generated PayPal Server SDK. And AI agents can read the claims… through DropBack's own MCP server.
-[confident] Fewer returns. Happier buyers. And the money… stays on PayPal.
-DropBack, by Sartech Labs. Built on PayPal.
+Every PayPal call runs through the APIMatic-generated PayPal Server SDK, and every price comes from Channel3. AI agents can read the claims… through DropBack's own MCP server.
+[confident] Fewer returns. Proof for every refund, from Channel3. And the money… stays on PayPal.
+DropBack, by Sartech Labs. Built on PayPal… powered by Channel3.

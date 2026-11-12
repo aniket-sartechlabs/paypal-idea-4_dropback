@@ -26,7 +26,8 @@ KEEP_CAPS = {"AI", "SDK", "MCP", "AG", "API", "USD", "NRF", "US"}
 
 SAMPLE = {"paid": 398.0, "offer": 348.0, "diff": 50.0, "retailer": "bestbuy.com", "return_cost": 141.36, "probability": 0.6,
           "refund": 50.0, "refund_status": "COMPLETED", "window_days": 14,
-          "loss_if_returned": 260.76, "net_savings": 106.46}
+          "loss_if_returned": 260.76, "net_savings": 106.46, "retailer_name": "Best Buy", "offers_checked": 8,
+          "c3_days": 52, "c3_low": 298.0, "c3_high": 398.0}
 
 
 def money(x) -> str:
@@ -41,6 +42,11 @@ def tokens(f: dict) -> dict[str, str]:
         "probability": str(round(float(f["probability"]) * 100)), "refund": money(f["refund"]),
         "refund_status": str(f.get("refund_status") or "completed").lower(), "window": str(f.get("window_days") or 14),
         "loss": f"${round(float(f.get('loss_if_returned') or f['return_cost'])):,}", "saving": f"${round(float(f.get('net_savings') or 0)):,}",
+        "retailer_name": str(f.get("retailer_name") or f.get("retailer") or "another retailer"),
+        "offers_checked": str(f.get("offers_checked") or "all"),
+        "c3_range": (f"held steady at {money(f['c3_high'])}" if f.get("c3_low") and abs(float(f["c3_low"]) - float(f["c3_high"])) < 0.01
+                     else f"ranged from {money(f.get('c3_low') or f['offer'])} to {money(f.get('c3_high') or f['paid'])}"),
+        "c3_days": str(f.get("c3_days") or 90), "c3_low": money(f.get("c3_low") or f["offer"]), "c3_high": money(f.get("c3_high") or f["paid"]),
     }
 
 
