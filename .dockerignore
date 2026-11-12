@@ -1,0 +1,17 @@
+.git
+.env
+.env.*
+!.env.example
+.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+*.db
+logs
+video-out
+demo-video
+docs
+frontend/node_modules
+frontend/dist
+backend/tests
+.claude

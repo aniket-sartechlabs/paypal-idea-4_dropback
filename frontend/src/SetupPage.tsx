@@ -10,7 +10,7 @@ export type SetupOverview = {
   paypal: { connected: boolean; source: 'merchant' | 'env' | 'none'; environment: string; client_id: string | null; connected_at: string | null
     webhook_url: string; webhook_registered: boolean; webhook_events: string[] }
   policy: { price_protection_window_days: number; max_refund_per_order: number; daily_refund_budget: number; allowed_retailers: string[] }
-  catalog: { products: number }
+  catalog: { products: number; linked: number }
   orders: { protected: number; imported: number }
   install: { portal_url: string; store_url: string; email_snippet: string }
   completed: boolean
@@ -84,6 +84,10 @@ export default function SetupPage({ toast }: { toast: (value: Toast) => void }) 
     void run(() => api('/orders/import', { method: 'POST', body: JSON.stringify({ paypal_order_id: importId.trim() }) }), 'Order imported and protected.')
   }
   const finish = () => void run(() => api('/setup/complete', { method: 'POST' }), 'DropBack is live for your store.').then(ok => { if (ok) navigate('/') })
+  const linkCatalog = () => void run(async () => {
+    const products = await api<{ id: string }[]>('/products')
+    for (const product of products) await api(`/products/${product.id}/channel3-check`, { method: 'POST' }).catch(() => undefined)
+  }, 'Products linked to live Channel3 listings.')
   const copy = (text: string) => { void navigator.clipboard?.writeText(text); toast({ kind: 'info', message: 'Copied.' }) }
 
   if (!setup) return <div className="setup-loading"><LoaderCircle className="spin" size={18} /> Loading your setup…</div>
@@ -150,8 +154,8 @@ export default function SetupPage({ toast }: { toast: (value: Toast) => void }) 
 
         {step === 'catalog' && <div>
           <PanelHead icon={<Package size={18} />} title="Products to protect" copy="Add what you sell from the live Channel3 catalog. Orders are matched to products by SKU, or by name when the SKU differs." />
-          <div className={`setup-status ${setup.catalog.products ? 'ok' : 'missing'}`}>{setup.catalog.products ? <><Check size={15} /> {setup.catalog.products} products linked for price monitoring</> : 'No products yet.'}</div>
-          <div className="setup-inline-actions"><Link className="button button-light" to="/products">Manage products</Link><button type="button" className="button button-dark" onClick={() => setStep('live')}>Continue <ArrowRight size={15} /></button></div>
+          <div className={`setup-status ${setup.catalog.linked ? 'ok' : setup.catalog.products ? 'warn' : 'missing'}`}>{setup.catalog.linked ? <><Check size={15} /> {setup.catalog.linked} of {setup.catalog.products} products linked for price monitoring</> : setup.catalog.products ? `${setup.catalog.products} products in your catalog, not yet linked to Channel3. Buyers see linked products only.` : 'No products yet.'}</div>
+          <div className="setup-inline-actions">{setup.catalog.linked < setup.catalog.products && <button type="button" className="button button-accent" data-testid="setup-link-catalog" disabled={busy} onClick={linkCatalog}>{busy ? <LoaderCircle size={15} className="spin" /> : <Package size={15} />} Link products with Channel3</button>}<Link className="button button-light" to="/products">Manage products</Link><button type="button" className="button button-dark" onClick={() => setStep('live')}>Continue <ArrowRight size={15} /></button></div>
         </div>}
 
         {step === 'live' && <div>

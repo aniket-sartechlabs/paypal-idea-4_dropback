@@ -39,10 +39,6 @@ def check_production_settings() -> None:
         problems.append("SECRET_KEY of at least 32 characters")
     if not settings.channel3_api_key:
         problems.append("CHANNEL3_API_KEY")
-    if not settings.channel3_webhook_secret:
-        problems.append("CHANNEL3_WEBHOOK_SECRET")
-    if not settings.paypal_webhook_id:
-        problems.append("PAYPAL_WEBHOOK_ID")
     if not settings.app_base_url.startswith("https://"):
         problems.append("an HTTPS APP_BASE_URL")
     if problems:
@@ -77,6 +73,6 @@ def startup() -> None:
     check_schema()
     with database.SessionLocal() as db:
         apply_saved_credentials(get_settings_row(db))
-        if not settings.is_production and db.scalar(select(func.count(Product.id))) == 0:
+        if (not settings.is_production or settings.demo_catalog) and db.scalar(select(func.count(Product.id))) == 0:
             seed_demo_catalog(db)
         db.commit()

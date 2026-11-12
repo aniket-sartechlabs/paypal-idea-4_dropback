@@ -151,7 +151,7 @@ async def merchant_onboarding(page: Page, r: Recorder, settings: Settings, signa
     await r.rect("policy_fields", ".setup-panel .settings-fields")
     await r.pause(1200)
     await page.get_by_role("button", name=re.compile("save policy", re.I)).click()
-    await page.get_by_text(re.compile(r"products linked for price monitoring")).wait_for(timeout=15000)
+    await page.get_by_text(re.compile(r"products linked for price monitoring|not yet linked to Channel3")).wait_for(timeout=15000)
     r.mark("catalog_step")
     await r.pause(2000)
     await page.locator('[data-testid="setup-step-live"]').click()

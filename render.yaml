@@ -1,17 +1,58 @@
+# Render Blueprint: one Docker web service (API + React app) and a Postgres database.
+# New → Blueprint → pick this repo, then fill in the values marked sync: false.
 services:
   - type: web
-    name: dropback-backend
-    env: python
-    buildCommand: pip install -r backend/requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --app-dir backend
+    name: dropback
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.12.0
       - key: ENVIRONMENT
         value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: dropback-db
+          property: connectionString
+      # APP_BASE_URL defaults to Render's public URL (RENDER_EXTERNAL_URL); set it only for a custom domain.
+      - key: SECRET_KEY
+        generateValue: true
+      - key: MCP_API_TOKEN
+        generateValue: true
+      - key: DEMO_CATALOG
+        value: "true"
       - key: PAYPAL_ENV
         value: sandbox
       - key: PAYPAL_BASE_URL
         value: https://api-m.sandbox.paypal.com
       - key: LLM_PROVIDER
         value: auto
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
+      # Secrets: entered in the Render dashboard, never committed.
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: CHANNEL3_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SIGNUP_CODE
+        sync: false
+      - key: MERCHANT_EMAIL
+        sync: false
+      - key: MERCHANT_PASSWORD
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: CHANNEL3_WEBHOOK_SECRET
+        sync: false
+
+databases:
+  - name: dropback-db
+    plan: free
+    databaseName: dropback
+    user: dropback

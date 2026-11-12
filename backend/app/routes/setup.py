@@ -26,6 +26,7 @@ def _mask(value: str) -> str:
 def setup_overview(db: Db, _: Merchant):
     row = get_settings_row(db)
     products = db.scalar(select(func.count(Product.id)).where(Product.active.is_(True))) or 0
+    linked = db.scalar(select(func.count(Product.id)).where(Product.active.is_(True), Product.channel3_product_id.is_not(None))) or 0
     protected_orders = db.scalar(select(func.count(Order.id)).where(Order.captured_at.is_not(None))) or 0
     imported_orders = db.scalar(select(func.count(Order.id)).where(Order.source == "import")) or 0
     connected = bool(row.paypal_client_id and row.paypal_client_secret_enc)
@@ -42,7 +43,7 @@ def setup_overview(db: Db, _: Merchant):
         },
         "policy": {"price_protection_window_days": row.price_protection_window_days, "max_refund_per_order": float(row.max_refund_per_order),
                    "daily_refund_budget": float(row.daily_refund_budget), "allowed_retailers": parse_retailers(row.allowed_retailers)},
-        "catalog": {"products": products},
+        "catalog": {"products": products, "linked": linked},
         "orders": {"protected": protected_orders, "imported": imported_orders},
         "install": {"portal_url": f"{base}/portal", "store_url": f"{base}/store",
                     "email_snippet": (f"Price drop after you buy? {row.merchant_name} refunds the difference for "

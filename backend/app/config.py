@@ -1,4 +1,7 @@
 from functools import lru_cache
+import os
+
+from pydantic import field_validator, model_validator
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -31,6 +34,32 @@ class Settings(BaseSettings):
     session_cookie_secure: bool = False
     # Bearer token required by the DropBack MCP endpoint (/mcp). Leave empty to disable it.
     mcp_api_token: str = ""
+    # Production sign-up needs this invite code; without it, production sign-up stays closed.
+    signup_code: str = ""
+    # Seed the demo catalog (Sony / AirPods / Kindle) when the catalog is empty. Always on in development.
+    demo_catalog: bool = False
+    # Built React app served by FastAPI in the single-service deployment (Render / Docker).
+    static_dir: str = ""
+
+    @field_validator("database_url")
+    @classmethod
+    def _psycopg_driver(cls, value: str) -> str:
+        """Render and Heroku-style URLs (postgres://, postgresql://) -> SQLAlchemy's psycopg 3 driver."""
+        for prefix in ("postgres://", "postgresql://"):
+            if value.startswith(prefix):
+                return "postgresql+psycopg://" + value[len(prefix):]
+        return value
+
+    @model_validator(mode="after")
+    def _platform_url(self):
+        """On Render, use the service's public URL for links, webhooks, and allowed origins."""
+        external = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
+        if external and "localhost" in self.app_base_url:
+            self.app_base_url = external
+        base = self.app_base_url.rstrip("/")
+        if base and base not in self.cors_origins:
+            self.cors_origins = [*self.cors_origins, base]
+        return self
 
     @property
     def is_production(self) -> bool:

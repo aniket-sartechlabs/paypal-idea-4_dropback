@@ -6,10 +6,12 @@ app/serializers.py, and sessions/access checks in app/security.py.
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.bootstrap import startup
 from app.config import get_settings
@@ -58,6 +60,21 @@ for module in (system, auth, setup, catalog, checkout, buyer, merchant, webhooks
     app.include_router(module.router)
 
 app.mount("/mcp", BearerProtectedMCP(lambda: app.state.mcp_http))
+
+# Single-service deployment (Render / root Dockerfile): serve the built React app from the API.
+_static = Path(settings.static_dir).resolve() if settings.static_dir else None
+if _static and (_static / "index.html").is_file():
+    if (_static / "assets").is_dir():
+        app.mount("/assets", StaticFiles(directory=_static / "assets"), name="assets")
+
+    @app.get("/{path:path}", include_in_schema=False)
+    async def spa(path: str):
+        if path.startswith(("api/", "mcp")):
+            raise HTTPException(404, "Not found.")
+        candidate = (_static / path).resolve()
+        if path and candidate.is_file() and candidate.is_relative_to(_static):
+            return FileResponse(candidate)
+        return FileResponse(_static / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.exception_handler(HTTPException)

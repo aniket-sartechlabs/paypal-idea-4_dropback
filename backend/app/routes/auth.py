@@ -54,10 +54,16 @@ def _env_matches(email: str, password: str) -> bool:
     return hmac.compare_digest(email, expected_email.strip().lower()) & hmac.compare_digest(password, expected_password)
 
 
+def _signup_code_required() -> bool:
+    # A public deployment must not let the first visitor claim the workspace.
+    return settings.is_production or bool(settings.signup_code)
+
+
 @router.get("/auth/signup")
 def signup_status(db: Db):
     row = get_settings_row(db)
-    return {"open": not row.owner_password_hash, "store_name": row.merchant_name}
+    open_ = not row.owner_password_hash and (bool(settings.signup_code) or not settings.is_production)
+    return {"open": open_, "store_name": row.merchant_name, "code_required": _signup_code_required()}
 
 
 @router.post("/auth/signup", status_code=201)
@@ -70,6 +76,11 @@ def signup(body: SignupInput, response: Response, request: Request, db: Db):
     row = get_settings_row(db)
     if row.owner_password_hash:
         raise HTTPException(409, "This DropBack workspace already has an owner. Sign in instead.")
+    if _signup_code_required():
+        if not settings.signup_code:
+            raise HTTPException(403, "Sign-up is closed on this deployment.")
+        if not hmac.compare_digest((body.invite_code or "").strip(), settings.signup_code):
+            raise HTTPException(403, "That invite code is not valid.")
     email = body.email.strip().lower()
     row.owner_email = email
     row.owner_password_hash = onboarding.hash_password(body.password)

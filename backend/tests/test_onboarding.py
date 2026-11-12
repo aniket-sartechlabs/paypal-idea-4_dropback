@@ -36,7 +36,7 @@ def test_signup_creates_the_one_workspace_owner(client, make_client):
     created = client.post("/api/v1/auth/signup", json=OWNER)
     assert created.status_code == 201, created.text
     assert client.get("/api/v1/auth/me").json()["email"] == OWNER["email"]
-    assert client.get("/api/v1/auth/signup").json() == {"open": False, "store_name": "Holloway Goods"}
+    assert client.get("/api/v1/auth/signup").json() == {"open": False, "store_name": "Holloway Goods", "code_required": False}
 
     other = make_client()
     assert other.post("/api/v1/auth/signup", json={**OWNER, "email": "intruder@example.com"}).status_code == 409
@@ -135,3 +135,26 @@ def test_claim_economics_include_the_lost_sale(client, sessions, fake_paypal, fa
     assert abs(fin["loss_if_returned"] - (fin["estimated_return_cost"] + fin["lost_margin"])) < 0.01
     expected = claim["return_probability"] * fin["loss_if_returned"] - fin["proposed_refund"]
     assert abs(fin["net_savings"] - expected) < 0.02
+
+
+def test_production_signup_needs_the_invite_code(client, monkeypatch):
+    from app.config import get_settings
+    settings = get_settings()
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "signup_code", "")
+    assert client.get("/api/v1/auth/signup").json()["open"] is False
+    assert client.post("/api/v1/auth/signup", json=OWNER).status_code == 403
+
+    monkeypatch.setattr(settings, "signup_code", "judge-invite-2026")
+    assert client.get("/api/v1/auth/signup").json() == {"open": True, "store_name": "DropBack Demo Store", "code_required": True}
+    assert client.post("/api/v1/auth/signup", json={**OWNER, "invite_code": "wrong"}).status_code == 403
+    assert client.post("/api/v1/auth/signup", json={**OWNER, "invite_code": "judge-invite-2026"}).status_code == 201
+
+
+def test_render_urls_are_normalized(monkeypatch):
+    from app.config import Settings
+    monkeypatch.setenv("RENDER_EXTERNAL_URL", "https://dropback.onrender.com")
+    settings = Settings(_env_file=None, database_url="postgresql://u:p@host:5432/db")
+    assert settings.database_url == "postgresql+psycopg://u:p@host:5432/db"
+    assert settings.app_base_url == "https://dropback.onrender.com"
+    assert "https://dropback.onrender.com" in settings.cors_origins

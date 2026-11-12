@@ -3,7 +3,7 @@ import type { ColDef } from 'ag-grid-community'
 import { Link, NavLink, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import {
   Activity, ArrowDownRight, ArrowRight, Check, CheckCircle2,
-  CircleHelp, ExternalLink, Eye, LayoutDashboard, LoaderCircle, LockKeyhole,
+  CircleHelp, ExternalLink, KeyRound, Eye, LayoutDashboard, LoaderCircle, LockKeyhole,
   LogOut, Package, Plus, RefreshCw, RotateCcw, Search, Settings2, ShieldCheck, ShoppingBag, Sparkles,
   Rocket, Store, Terminal, TrendingDown, UserRound, WalletCards, X,
 } from 'lucide-react'
@@ -138,14 +138,16 @@ function Login({ onLogin }: { onLogin: (email: string, created?: boolean) => voi
   const [signupOpen, setSignupOpen] = useState(false)
   const [mode, setMode] = useState<'signin' | 'signup'>('signin')
   const [storeName, setStoreName] = useState('')
+  const [inviteCode, setInviteCode] = useState('')
+  const [codeRequired, setCodeRequired] = useState(false)
 
-  useEffect(() => { api<{ open: boolean }>('/auth/signup').then(r => setSignupOpen(r.open)).catch(() => undefined) }, [])
+  useEffect(() => { api<{ open: boolean; code_required?: boolean }>('/auth/signup').then(r => { setSignupOpen(r.open); setCodeRequired(!!r.code_required) }).catch(() => undefined) }, [])
 
   async function createWorkspace() {
     setPending(true)
     setError('')
     try {
-      const result = await api<{ email: string }>('/auth/signup', { method: 'POST', body: JSON.stringify({ email, password, store_name: storeName }) })
+      const result = await api<{ email: string }>('/auth/signup', { method: 'POST', body: JSON.stringify({ email, password, store_name: storeName, invite_code: inviteCode || undefined }) })
       onLogin(result.email, true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create the workspace.')
@@ -210,6 +212,7 @@ function Login({ onLogin }: { onLogin: (email: string, created?: boolean) => voi
         </div>}
         <form className="login-form" onSubmit={submit}>
           {mode === 'signup' && <label>Store name<div className="input-wrap"><Store size={16} className="field-icon" /><input data-testid="signup-store-name" value={storeName} onChange={e => setStoreName(e.target.value)} required minLength={2} /></div></label>}
+          {mode === 'signup' && codeRequired && <label>Invite code<div className="input-wrap"><KeyRound size={16} className="field-icon" /><input data-testid="signup-invite-code" value={inviteCode} onChange={e => setInviteCode(e.target.value)} required autoComplete="off" /></div></label>}
           <label>Email address<div className="input-wrap"><span className="field-icon">@</span><input autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} required type="email" /></div></label>
           <label>Password<div className="input-wrap"><LockKeyhole size={16} className="field-icon" /><input autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} minLength={mode === 'signup' ? 10 : 1} value={password} onChange={e => setPassword(e.target.value)} required type={show ? 'text' : 'password'} /><button className="reveal-button" type="button" onClick={() => setShow(value => !value)} aria-label={show ? 'Hide password' : 'Show password'}><Eye size={16} /></button></div></label>
           {error && <div className="form-error">{error}</div>}
