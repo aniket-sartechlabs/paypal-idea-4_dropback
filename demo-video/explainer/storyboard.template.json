@@ -19,7 +19,7 @@
    "chapter": "// PayPal AI Hackathon 2026",
    "counter": null,
    "hold": 0.6,
-   "say": "[confident] This is DropBack, powered by PayPal and Channel3. … When the price drops, your customer KEEPS the item… and you keep the sale.",
+   "say": "[confident] DropBack, powered by PayPal and Channel3. When the price drops… your customer KEEPS the item, and you keep the sale.",
    "caption": "",
    "visual": {
     "type": "title",
@@ -33,7 +33,7 @@
      "OpenAI"
     ],
     "cue": "When",
-    "subCue": "This",
+    "subCue": "DropBack",
     "pillsCue": "sale",
     "powered": [
      "PayPal",
@@ -47,15 +47,15 @@
    "act": 1,
    "theme": "paper",
    "chapter": "// the problem",
-   "say": "[serious] Last year, American shoppers sent back $890 billion of merchandise. … Almost seventeen percent of everything they bought.",
-   "caption": "Shoppers sent back *$890 billion* of merchandise. / Almost *17%* of everything they bought.",
+   "say": "[serious] US shoppers returned $890 billion of goods last year.",
+   "caption": "US shoppers returned *$890 billion* of goods last year.",
    "visual": {
     "type": "stat",
     "value": 890,
     "suffix": "B",
     "label": "*$890 billion* in US retail returns, 2024",
     "sub": "16.9% of all retail sales",
-    "subCue": "seventeen",
+    "subCue": "goods",
     "source": "NRF & Happy Returns, 2024 Consumer Returns report",
     "cue": "$890"
    }
@@ -65,8 +65,8 @@
    "act": 1,
    "theme": "paper",
    "chapter": "// the problem",
-   "say": "And some returns have NOTHING to do with the product. A shopper pays {paid}. Days later, it's {offer} somewhere else. … So they send it back, and buy it again… cheaper.",
-   "caption": "Some returns have *nothing to do with the product.* / Pays *{paid}.* Days later it's *{offer}* elsewhere. / So they send it back… and *buy it again, cheaper.*",
+   "say": "Some returns aren't about the product. A shopper pays {paid}… then sees it for {offer} elsewhere. So they return it, and buy it again.",
+   "caption": "Some returns *aren't about the product.* / Pays *{paid},* then sees *{offer}* elsewhere. / So they *return it, and buy it again.*",
    "visual": {
     "type": "flow",
     "nodes": [
@@ -80,13 +80,13 @@
       "k": "DAY 3",
       "text": "Sees {offer}",
       "sub": "at another retailer",
-      "cue": "later"
+      "cue": "sees"
      },
      {
       "k": "RETURN",
       "text": "Sends it back",
       "sub": "full refund",
-      "cue": "send"
+      "cue": "return"
      },
      {
       "k": "REBUY",
@@ -102,8 +102,8 @@
    "act": 1,
    "theme": "paper",
    "chapter": "// the problem",
-   "say": "[thoughtful] For the merchant, that return costs FAR more than the difference. Return shipping, restocking, an open-box markdown, and the profit on a sale that's gone… about {loss}… to avoid a {diff} gap.",
-   "caption": "That return costs *far more than the difference.* / Shipping, restocking, open-box, the lost sale: *about {loss}* / to avoid a *{diff}* gap.",
+   "say": "[thoughtful] For the merchant, that return costs about {loss}: shipping, restocking, markdown, and the lost sale… to avoid a {diff} gap.",
+   "caption": "For the merchant, that return costs *about {loss}:* / shipping, restocking, markdown, the lost sale, / to avoid a *{diff}* gap.",
    "visual": {
     "type": "compare",
     "left": {
@@ -122,17 +122,17 @@
       },
       {
        "text": "Open-box markdown",
-       "cue": "open"
+       "cue": "markdown"
       },
       {
        "text": "The sale is lost",
-       "cue": "profit"
+       "cue": "lost"
       }
      ]
     },
     "right": {
      "title": "Refund the *difference*",
-     "cue": "difference",
+     "cue": "gap",
      "mark": "ok",
      "stamp": "−{diff}",
      "stampCue": "gap",
@@ -157,26 +157,12 @@
    }
   },
   {
-   "id": "D05",
-   "act": 1,
-   "theme": "paper",
-   "chapter": "// the problem",
-   "say": "Some stores offer price matching. But checking rival prices by hand is slow… and most shoppers never even know the policy exists.",
-   "caption": "Price matching exists. But checking rival prices *by hand is slow,* / and *most shoppers never know* the policy exists.",
-   "visual": {
-    "type": "headline",
-    "meta": "Checkbook.org · survey of retailer price-adjustment policies",
-    "title": "Most shoppers are <em style=\"font-style:inherit;color:var(--accent)\">unaware</em> price adjustments exist, because few retailers advertise them.",
-    "cue": "most"
-   }
-  },
-  {
    "id": "D06",
    "act": 2,
    "theme": "midnight",
    "chapter": "// how DropBack works",
-   "say": "[warmly] DropBack plugs into the checkout a merchant already has. Channel3 watches the exact product across retailers, with its price history. AI weighs a refund against a likely return. And the merchant sends a PayPal refund… in ONE click.",
-   "caption": "DropBack plugs into the *checkout a merchant already has.* / *Channel3* watches the exact product across retailers, with *price history.* / *AI* weighs refund vs. return; the merchant *refunds in one click.*",
+   "say": "[warmly] DropBack plugs into a merchant's PayPal checkout. Channel3 finds the exact product's live price and history. AI weighs a refund against a return. And the merchant refunds the difference… in ONE click.",
+   "caption": "DropBack plugs into a merchant's *PayPal checkout.* / *Channel3:* the exact product's live price and history. *AI* weighs refund vs. return. / The merchant *refunds the difference in one click.*",
    "visual": {
     "type": "flow",
     "nodes": [
@@ -208,7 +194,7 @@
       "k": "05",
       "text": "PayPal refund",
       "sub": "Payments v2, idempotent",
-      "cue": "refund"
+      "cue": "refunds"
      }
     ]
    }
@@ -218,8 +204,8 @@
    "act": 2,
    "theme": "midnight",
    "chapter": "// merchant setup",
-   "say": "[upbeat] Here it is, live in PayPal Sandbox. A merchant joins in a couple of minutes. They create a workspace for their store…",
-   "caption": "Live in *PayPal Sandbox.* A merchant joins in *a couple of minutes:* / they create a workspace for their store.",
+   "say": "[upbeat] Live in PayPal Sandbox: a merchant creates a workspace…",
+   "caption": "Live in *PayPal Sandbox:* a merchant creates a workspace…",
    "visual": {
     "type": "rec",
     "src": "rec_live/live.webm",
@@ -244,8 +230,8 @@
    "act": 2,
    "theme": "midnight",
    "chapter": "// merchant setup · PayPal",
-   "say": "…and connect their own PayPal account. DropBack checks the keys with PayPal and encrypts the secret. From then on, paid orders from their checkout flow in by webhook.",
-   "caption": "They connect *their own PayPal account.* Keys verified, secret *encrypted.* / Paid orders from their checkout *flow in by webhook.*",
+   "say": "…connects their own PayPal account, and paid orders flow in by webhook.",
+   "caption": "…connects *their own PayPal account;* paid orders flow in *by webhook.*",
    "visual": {
     "type": "rec",
     "src": "rec_live/live.webm",
@@ -256,7 +242,7 @@
     "boxes": [
      {
       "rect": "paypal_status",
-      "cue": "checkout"
+      "cue": "paid"
      },
      {
       "rect": "webhook_note",
@@ -274,8 +260,8 @@
    "act": 2,
    "theme": "midnight",
    "chapter": "// merchant setup · policy",
-   "say": "They pick the retailers they'll price-match… Channel3 links their products for live monitoring… and they turn protection on.",
-   "caption": "They pick the *retailers they'll match.* / *Channel3* links their products for monitoring, / and they *turn protection on.*",
+   "say": "…picks the retailers to price-match, and turns protection on.",
+   "caption": "…picks the *retailers to price-match,* and turns *protection on.*",
    "visual": {
     "type": "rec",
     "src": "rec_live/live.webm",
@@ -300,8 +286,8 @@
    "act": 2,
    "theme": "midnight",
    "chapter": "// live · the buyer",
-   "say": "Now a shopper picks Sony headphones in the Holloway store… {paid}, covered for {window} days.",
-   "caption": "A shopper picks *Sony headphones*: / *{paid}*, covered for *{window} days.*",
+   "say": "A shopper buys Sony headphones: {paid}, protected for {window} days.",
+   "caption": "A shopper buys *Sony headphones:* / *{paid},* protected for *{window} days.*",
    "visual": {
     "type": "rec",
     "src": "rec_live/live.webm",
@@ -322,13 +308,13 @@
    "act": 2,
    "theme": "midnight",
    "chapter": "// step 1 · checkout",
-   "say": "They check out with PayPal. DropBack creates the order through PayPal's Server SDK.",
-   "caption": "They check out *with PayPal.* / The order is created through *PayPal's Server SDK.*",
+   "say": "They pay with PayPal. The order and the capture run through PayPal's Server SDK.",
+   "caption": "They pay *with PayPal.* / Order and capture run through *PayPal's Server SDK.*",
    "visual": {
     "type": "rec",
     "src": "rec_live/live.webm",
     "mark": "added",
-    "until": "paypal_open",
+    "until": "portal",
     "url": "localhost:5173/store · Checkout",
     "badge": "LIVE · PayPal Sandbox",
     "boxes": [
@@ -336,27 +322,11 @@
       "rect": "paypal_button",
       "cue": "PayPal"
      }
-    ]
-   }
-  },
-  {
-   "id": "R03",
-   "act": 2,
-   "theme": "midnight",
-   "chapter": "// step 1 · checkout",
-   "say": "The buyer signs in to PayPal, and approves. The payment is captured.",
-   "caption": "The buyer signs in to PayPal *and approves.* / The payment is *captured.*",
-   "visual": {
-    "type": "rec",
-    "src": "rec_live/live.webm",
-    "mark": "paypal_open",
-    "until": "portal",
+    ],
     "pad": [
      0,
      1.5
-    ],
-    "url": "PayPal Sandbox checkout",
-    "badge": "LIVE · PayPal Sandbox"
+    ]
    }
   },
   {
@@ -364,8 +334,8 @@
    "act": 2,
    "theme": "midnight",
    "chapter": "// step 2 · day 3 · price check",
-   "say": "Day three. The buyer opens their order… and checks the live market price.",
-   "caption": "*Day three.* The buyer opens their order / and checks the *live market price.*",
+   "say": "Day three: they check the live price.",
+   "caption": "*Day three:* they check the *live price.*",
    "visual": {
     "type": "rec",
     "src": "rec_live/live.webm",
@@ -376,7 +346,7 @@
     "boxes": [
      {
       "rect": "order_card",
-      "cue": "order"
+      "cue": "Day"
      },
      {
       "rect": "price_check_btn",
@@ -390,8 +360,8 @@
    "act": 2,
    "theme": "midnight",
    "chapter": "// step 2 · Channel3",
-   "say": "Channel3 checks new, in-stock offers for the EXACT same model, only from retailers this store price-matches. The lowest: {offer} at {retailer_name}. That's {diff} less.",
-   "caption": "*Channel3* checks new, in-stock offers for the exact model, / only from retailers this store matches. Lowest: *{offer}* at *{retailer_name}.* That's *{diff} less.*",
+   "say": "Channel3 finds the exact model, new and in stock, at a retailer this store matches: {offer} at {retailer_name}. {diff} less.",
+   "caption": "*Channel3* finds the exact model, new and in stock: / *{offer}* at *{retailer_name}.* *{diff} less.*",
    "visual": {
     "type": "rec",
     "src": "rec_live/live.webm",
@@ -416,8 +386,8 @@
    "act": 2,
    "theme": "midnight",
    "chapter": "// step 2 · Channel3 price history",
-   "say": "And it's verified by Channel3: the retailer, and {c3_days} days of price history for this exact product. It {c3_range}… so the merchant can see today's {offer} is a real drop, not a guess.",
-   "caption": "*Verified by Channel3:* the retailer, and *{c3_days} days* of price history. It {c3_range}, / so today's *{offer}* is a *real drop,* not a guess.",
+   "say": "Verified by Channel3, with {c3_days} days of price history. It {c3_range}, so this is a real drop.",
+   "caption": "*Verified by Channel3:* {c3_days} days of price history. / It {c3_range}, so this is a *real drop.*",
    "visual": {
     "type": "rec",
     "src": "rec_live/live.webm",
@@ -428,7 +398,7 @@
     "boxes": [
      {
       "rect": "c3_panel",
-      "cue": "verified"
+      "cue": "Verified"
      }
     ]
    }
@@ -438,8 +408,8 @@
    "act": 2,
    "theme": "midnight",
    "chapter": "// step 2 · the request",
-   "say": "Instead of sending it back… they ask for the difference.",
-   "caption": "Instead of sending it back, / they *ask for the difference.*",
+   "say": "They ask for the difference, instead of a return.",
+   "caption": "They ask for *the difference,* instead of a return.",
    "visual": {
     "type": "rec",
     "src": "rec_live/live.webm",
@@ -458,8 +428,8 @@
      },
      {
       "rect": "claim_banner",
-      "cue": "difference",
-      "off": 0.6
+      "cue": "instead",
+      "off": 0.4
      }
     ]
    }
@@ -469,8 +439,8 @@
    "act": 2,
    "theme": "midnight",
    "chapter": "// step 3 · merchant review",
-   "say": "On the merchant side, every request lands in AG Grid: the buyer, the live offer, and the refund… versus the cost of a return.",
-   "caption": "Every request lands in *AG Grid:* / the buyer, the live offer, and the *refund vs. the cost of a return.*",
+   "say": "The merchant sees every request in AG Grid.",
+   "caption": "The merchant sees every request in *AG Grid.*",
    "visual": {
     "type": "rec",
     "src": "rec_live/live.webm",
@@ -481,7 +451,7 @@
     "boxes": [
      {
       "rect": "grid_row",
-      "cue": "buyer"
+      "cue": "request"
      }
     ]
    }
@@ -491,8 +461,8 @@
    "act": 2,
    "theme": "midnight",
    "chapter": "// step 3 · AI case report",
-   "say": "The merchant's case report opens on the same Channel3 evidence. The AI puts the return risk at {probability} percent. Counting the lost sale, a return would cost about {loss}… so refunding {refund} saves about {saving} on average. [firm] Policy limits are NEVER left to the model.",
-   "caption": "The case report opens on the *Channel3 evidence.* Return risk: *{probability}%.* / A return, counting the lost sale: *about {loss}.* Refunding {refund} saves *about {saving}.* / *Limits are never left to the model.*",
+   "say": "The case report shows the Channel3 evidence, a {probability} percent return risk, and a return that would cost {loss}. Refunding {refund} saves about {saving}. [firm] Policy limits are NEVER left to the AI.",
+   "caption": "*Channel3 evidence,* a *{probability}%* return risk, a return costing *{loss}.* / Refunding {refund} saves *about {saving}.* / *Policy limits are never left to the AI.*",
    "visual": {
     "type": "rec",
     "src": "rec_live/live.webm",
@@ -517,8 +487,8 @@
    "act": 2,
    "theme": "midnight",
    "chapter": "// step 4 · PayPal refund",
-   "say": "The merchant approves. PayPal refunds {refund} to the original payment… with an idempotency key, so it can NEVER pay twice.",
-   "caption": "The merchant approves. PayPal refunds *{refund}* to the original payment, / with an *idempotency key,* so it can *never pay twice.*",
+   "say": "One click: PayPal refunds {refund}, with an idempotency key, so it can never pay twice.",
+   "caption": "One click: PayPal refunds *{refund},* / with an *idempotency key,* so it can *never pay twice.*",
    "visual": {
     "type": "rec",
     "src": "rec_live/live.webm",
@@ -533,7 +503,7 @@
     "boxes": [
      {
       "rect": "approve_btn",
-      "cue": "approves"
+      "cue": "click"
      }
     ]
    }
@@ -543,8 +513,8 @@
    "act": 2,
    "theme": "midnight",
    "chapter": "// step 4 · the buyer",
-   "say": "[warmly] The buyer sees it right away. Refund credited. They keep their headphones… and the merchant keeps the sale.",
-   "caption": "Refund *credited.* They keep their headphones, / and the merchant *keeps the sale.*",
+   "say": "[warmly] The buyer keeps the headphones… the merchant keeps the sale.",
+   "caption": "The buyer *keeps the headphones;* / the merchant *keeps the sale.*",
    "visual": {
     "type": "rec",
     "src": "rec_live/live.webm",
@@ -555,29 +525,9 @@
     "boxes": [
      {
       "rect": "refund_banner",
-      "cue": "Refund"
+      "cue": "keeps"
      }
     ]
-   }
-  },
-  {
-   "id": "R11",
-   "act": 2,
-   "theme": "midnight",
-   "chapter": "// the merchant's view",
-   "say": "The overview tracks every refund… and the returns it avoided.",
-   "caption": "The overview tracks *every refund,* / and the *returns it avoided.*",
-   "visual": {
-    "type": "rec",
-    "src": "rec_live/live.webm",
-    "mark": "overview",
-    "until": "apilab",
-    "pad": [
-     0,
-     -0.5
-    ],
-    "url": "localhost:5173 · Overview",
-    "badge": "Merchant console"
    }
   },
   {
@@ -585,15 +535,15 @@
    "act": 2,
    "theme": "midnight",
    "chapter": "// built on PayPal",
-   "say": "Every PayPal call runs through the APIMatic-generated PayPal Server SDK, and every price comes from Channel3. AI agents can read the claims… through DropBack's own MCP server.",
-   "caption": "Every PayPal call: the *APIMatic-generated PayPal Server SDK.* Every price: *Channel3.* / AI agents read claims through DropBack's *MCP server.*",
+   "say": "Built on the APIMatic PayPal Server SDK, with an MCP server for AI agents… and deployed on Render.",
+   "caption": "Built on the *APIMatic PayPal Server SDK,* / an *MCP server* for AI agents, *deployed on Render.*",
    "visual": {
     "type": "rec",
     "src": "rec_live/live.webm",
     "mark": "apilab",
     "until": "end",
     "url": "localhost:5173/apimatic · PayPal API lab",
-    "badge": "PayPal Server SDK · MCP",
+    "badge": "PayPal Server SDK · MCP · Render",
     "boxes": [
      {
       "rect": "sdk_ops",
@@ -611,7 +561,7 @@
    "act": 3,
    "theme": "midnight",
    "chapter": "// why it matters",
-   "say": "[confident] Fewer returns. Proof for every refund, from Channel3. And the money… stays on PayPal.",
+   "say": "[confident] Fewer returns. Proof from Channel3. And the money stays on PayPal.",
    "caption": "",
    "visual": {
     "type": "big3",
@@ -640,7 +590,7 @@
    "theme": "midnight",
    "chapter": "// PayPal AI Hackathon 2026",
    "hold": 1.4,
-   "say": "DropBack, by Sartech Labs. Built on PayPal… powered by Channel3.",
+   "say": "DropBack, by Sartech Labs.",
    "caption": "",
    "visual": {
     "type": "end",
@@ -651,7 +601,7 @@
      "Channel3",
      "AG Grid",
      "APIMatic",
-     "MCP"
+     "Render"
     ],
     "repo": "github.com/aniket-sartechlabs/paypal-idea-4_dropback",
     "powered": [

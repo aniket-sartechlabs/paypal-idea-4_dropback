@@ -16,6 +16,14 @@ Built for the PayPal AI Hackathon 2026 with the PayPal, Channel3, AG Grid, and A
 | Deploy | One Docker service + Postgres on Render (`render.yaml`) |
 | Tests | `cd backend && pytest` (37 tests, including a migrations-match-models check) |
 
+## For judges
+
+- **Demo video (under 3 minutes):** see the YouTube link in the Devpost submission.
+- **Try it hosted:** the Render URL and merchant login are in the Devpost testing instructions. Buy in `/store` with a PayPal **Sandbox personal** account, request the difference in `/portal`, and approve it in the merchant console (`/login` → Claims).
+- **Run it yourself:** `cp .env.example .env`, add PayPal Sandbox and Channel3 keys, `make setup && make dev`, open http://127.0.0.1:5173. Tests: `cd backend && pytest`.
+- **Built during the hackathon:** merchant sign-up and setup wizard, connect-your-own-PayPal with order import, Channel3 evidence (price history, retailer details, URL lookup, approved-retailer filters, tracking), the lost-sale return economics, the PayPal Server SDK migration and MCP server, and the single-service Render deployment.
+- **License:** MIT (see `LICENSE`).
+
 ## How a merchant uses DropBack
 
 DropBack is an add-on to a merchant's existing PayPal checkout, not a new store.

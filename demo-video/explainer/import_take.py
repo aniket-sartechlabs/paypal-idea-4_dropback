@@ -45,6 +45,17 @@ def transcribe(client: openai.OpenAI, path: Path, prompt: str | None = None) -> 
     return [{"w": w.word, "start": round(w.start, 3), "end": round(w.end, 3)} for w in (tr.words or [])]
 
 
+def merge_split_words(words: list[dict]) -> list[dict]:
+    """Whisper writes 'Channel3' as 'Channel 3'; join a word and a following bare number back together."""
+    out: list[dict] = []
+    for w in words:
+        if out and re.fullmatch(r"\d+[.,!?]?", w["w"].strip()) and re.search(r"[A-Za-z]$", out[-1]["w"].strip()):
+            out[-1] = {"w": out[-1]["w"].strip() + w["w"].strip(), "start": out[-1]["start"], "end": w["end"]}
+        else:
+            out.append(w)
+    return out
+
+
 def main() -> None:
     load_dotenv(ROOT / ".env")
     ap = argparse.ArgumentParser()
@@ -66,7 +77,8 @@ def main() -> None:
     full = AUDIO.parent / "take_full.wav"
     subprocess.run([FF, "-y", "-v", "error", "-i", args.take, "-ar", "24000", "-ac", "1", "-sample_fmt", "s16", str(full)], check=True)
     total = duration(full)
-    heard = transcribe(client, full)
+    glossary = sb.get("glossary") or "DropBack, Channel3, PayPal, APIMatic, AG Grid, MCP, Sartech Labs, Holloway, Beach Camera."
+    heard = merge_split_words(transcribe(client, full, glossary))
     print(f"take {total:.1f}s, Whisper heard {len(heard)} words")
 
     # Script words, each tagged with its scene; matched to the heard words.
@@ -86,6 +98,9 @@ def main() -> None:
             first.setdefault(s, h["start"])
             first[s] = min(first[s], h["start"])
             last[s] = max(last.get(s, 0.0), h["end"])
+    if len(scenes) - 1 not in first and len(scenes) - 2 in last:
+        # The closing line often goes unmatched (names); it is whatever follows the previous scene.
+        first[len(scenes) - 1], last[len(scenes) - 1] = last[len(scenes) - 2] + 0.05, total
     missing = [scenes[i]["id"] for i in range(len(scenes)) if i not in first]
     if missing:
         raise SystemExit(f"no words matched for {missing}; check the take")
